@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026.10.19.4
+
+- Add a separate opt-in live DHW delay switch, requiring existing control permissions and shadow collection.
+- Apply only learned, fresh full-delay scenarios with reserve and deadline checks, using the existing compressor target and verified serialized commands.
+- Persist original-target ownership before writes; restore on cancellation, expiry, restart and disable while preserving manual overrides.
+- Keep live control off after reload/restart and expose pending recovery/errors in switch attributes.
+- Recompute shadow plans every minute while live control is armed and preserve the original target for forecasts.
+- Add policy, persistence, failure and recovery tests.
+
 ## 2026.10.19.3
 
 - Prepare the repository for HACS installation and versioned GitHub releases.

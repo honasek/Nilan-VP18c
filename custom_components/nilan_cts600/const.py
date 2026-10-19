@@ -8,4 +8,4 @@ DEFAULT_T15 = "sensor.th_sensor_115e4b_lywsd03mmc_mjwsd05mmc_pvvx_bthome_tempc"
 DEFAULT_T15_BACKUP = "sensor.th_sensor_9d80cf_lywsd03mmc_mjwsd05mmc_pvvx_bthome_tempc"
 DEFAULT_GATE = "input_boolean.nilan_control_enabled"
 DEFAULT_MAX_AGE = 900
-VERSION = "2026.10.17.4"
+VERSION = "2026.10.19.4"

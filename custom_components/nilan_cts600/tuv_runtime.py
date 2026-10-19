@@ -130,7 +130,9 @@ class TUVRuntime(DataUpdateCoordinator):
         key=self._forecast_key()
         last=self.model.last
         context_ready=last is not None and key[2:]==(last.compressor,last.auxiliary,last.mode,last.fan_key)
-        return (tuple(asdict(settings).items()),error,int(time.time()//900),key[1:],
+        live=getattr(self.main,'_tuv_live_runtime',None)
+        cadence=60 if live is not None and live.control.enabled else 900
+        return (tuple(asdict(settings).items()),error,int(time.time()//cadence),key[1:],
                 self.model.active_draw,self.model.phase if self.model.phase in ('initializing','gap','mismatch','restored') else 'stable',
                 context_ready,self.shadow.summary()['learning_ready'])
 
@@ -190,6 +192,8 @@ class TUVRuntime(DataUpdateCoordinator):
     def _forecast_key(self):
         data=self.main.data or {};flags=indicators(data)
         raw=getattr(getattr(self.main,'menu',None),'values',{}).get('dhw_temperature')
+        live=getattr(self.main,'_tuv_live_runtime',None)
+        if live is not None:raw=live.control.forecast_target(raw)
         try:target=float(raw) if not isinstance(raw,bool) else None
         except (TypeError,ValueError):target=None
         if not finite(target) or not 5<=target<=60:target=None

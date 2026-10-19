@@ -173,6 +173,9 @@ class CTS600Coordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
 
     async def async_shutdown(self):
+        live_runtime = getattr(self, '_tuv_live_runtime', None)
+        if live_runtime is not None:
+            await live_runtime.async_shutdown()
         filter_runtime = getattr(self, '_filter_runtime', None)
         if filter_runtime is not None:
             await filter_runtime.async_shutdown()
@@ -261,6 +264,42 @@ class CTS600Coordinator(DataUpdateCoordinator):
             else:raise ValueError('Unsupported menu command')
             self.cts600.updateData(False)
             return self.cts600.data.copy()
+
+    def _live_read_target_sync(self):
+        with self.transport.operation(seconds=40):
+            if not self._initialized:
+                raise ConnectionError('CTS600 must reconnect before restoring the DHW target')
+            return self.menu.read('dhw_temperature')
+
+    async def async_live_dhw(self, expected, value, restoring, guard):
+        """Serialize a physical compare/read/write; never overwrite a manual target."""
+        BY_KEY['dhw_temperature'].validate(value)
+        async with self._lock:
+            if self._closed:
+                raise HomeAssistantError('CTS600 integration unloaded')
+            t15 = self._check_guard(require_commands=True)
+            try:
+                actual = await self.hass.async_add_executor_job(self._live_read_target_sync)
+                if actual != expected:
+                    self.async_set_updated_data(self.cts600.data.copy())
+                    return False
+                # Permissions and plan can change while waiting for the physical read.
+                t15 = self._check_guard(require_commands=True)
+                if not restoring and not guard():
+                    raise HomeAssistantError('Live-control permission or plan expired before write')
+                result = await self.hass.async_add_executor_job(
+                    self._menu_command_sync, 'setting', {'key': 'dhw_temperature', 'value': value}, t15)
+            except Exception as exc:
+                self.last_error = str(exc)
+                self._initialized = False
+                await self.hass.async_add_executor_job(self.transport.close)
+                self.async_set_update_error(UpdateFailed(str(exc)))
+                raise HomeAssistantError(f'Live DHW write/readback failed; restoration retained: {exc}') from exc
+            self.last_success = dt_util.utcnow()
+            self.last_error = None
+            self.last_command = 'tuv_live_restore' if restoring else 'tuv_live_delay'
+            self.async_set_updated_data(result)
+            return True
 
     async def async_menu_command(self,command,payload):
         # Validate before entering the executor/socket, then serialize the whole transaction.

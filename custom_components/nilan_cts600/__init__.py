@@ -14,6 +14,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         from .filter_maintenance import FilterMaintenance
         coordinator._filter_runtime=FilterMaintenance(hass,coordinator)
         await coordinator._filter_runtime.async_start()
+        from .tuv_live_runtime import TUVLiveRuntime
+        coordinator._tuv_live_runtime = TUVLiveRuntime(hass, coordinator)
+        await coordinator._tuv_live_runtime.async_start()
         entry.runtime_data = coordinator
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         register_services(hass)

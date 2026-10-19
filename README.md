@@ -4,7 +4,7 @@
 
 A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Current distribution version: **2026.10.19.3**. The runtime code matches version 2026.10.19.2, tested on Home Assistant Core **2026.10.2**; release .3 updates packaging and metadata for HACS. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
+Current version: **2026.10.19.4**, targeting Home Assistant Core **2026.10.2**. This release adds explicitly enabled DHW delay control alongside the passive model. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
 
 ## Features
 
@@ -119,6 +119,20 @@ The default maximum T15 reading age is 15 minutes. If `input_number.nilan_t15_ma
 If TCP cannot connect, check the gateway address, listening port, LAN routing and whether another client holds the connection. If TCP connects but CTS600 data does not update, check two-wire RS485 mode, the verified A/B assignments, 19200 8N2, transparent protocol and physical panel disconnection. Power down before changing wiring.
 
 To restore the physical panel, first disable the integration so it stops emulating the panel, isolate the unit's power, disconnect the gateway's communication pair and reconnect the original panel exactly as documented before installation. Close the compartment, restore power and verify normal panel operation. Turning off the control unlock helper alone does not stop panel emulation.
+
+## Optional live DHW delay control
+
+`input_boolean.nilan_tuv_shadow_enabled` enables collection and simulation only. Switching it off does not enable live control.
+
+The integration provides a separate **`switch.nilan_tuv_live_control`**. Before turning it on, enable your configured control unlock helper, `input_boolean.nilan_automatic_control_enabled` and `input_boolean.nilan_tuv_shadow_enabled`. These existing helpers are supplied by the home configuration; HACS does not create them. Missing helpers keep live control blocked.
+
+Live control accepts only a fresh, learned **full-delay** scenario with a verified completion deadline and sufficient current thermal reserve. Collecting, partial top-up, earlier-start, stale or unsupported scenarios leave normal heating in charge. While armed, the plan is refreshed every minute. The model is an estimate, not a guarantee of hot-water availability.
+
+An accepted delay temporarily sets the existing compressor T12 target to **5 °C** through the normal serialized menu command with physical readback. It leaves the electric heater, ventilation and air-mode settings unchanged; firmware still decides actual compressor operation. The original target is saved durably before any write and remains the target used for forecasting. A delay is cancelled when its start time arrives, reserve drops, a permission is removed or the plan/data becomes invalid. The original target is then restored, provided a fresh physical read still matches the temporary target. A manually changed target always takes priority.
+
+The switch is **off after every integration reload or Home Assistant restart**. Any pending original target is recovered from a separate journal. The same cancelled/completed window is not postponed again, including after a restart. Turning the switch off requests immediate restoration; if communication or the T15/control guard prevents it, `status: restore_pending` and `reason` expose the problem and recovery is retried after connectivity/permission returns. Keep control permission available until restoration is confirmed. If Home Assistant or the gateway remains offline, the temporary 5 °C target can remain on the unit until communication and restoration are available again; the journal cannot provide an autonomous hardware timeout. The switch being off alone does not prove that a pending target has already been restored.
+
+Switch attributes expose `status`, `reason`, the owned target lease and its release deadline. Record this switch for operational history; keep the detailed shadow/model diagnostic sensors excluded from Recorder.
 
 ## Services and stored data
 
