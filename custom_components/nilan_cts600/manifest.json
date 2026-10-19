@@ -10,7 +10,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/honasek/Nilan-VP18c/issues",
   "requirements": [
-    "pymodbus==3.13.1"
+    "pymodbus>=3.13.1"
   ],
   "version": "2026.10.19.3"
 }
