@@ -1,8 +1,10 @@
 # Nilan VP18c / CTS600 pro Home Assistant
 
+[![Validate](https://github.com/honasek/Nilan-VP18c/actions/workflows/validate.yml/badge.svg)](https://github.com/honasek/Nilan-VP18c/actions/workflows/validate.yml)
+
 Custom integrace řídicího systému **Nilan CTS600** s připojením přes transparentní TCP–RS485 bránu. Tato varianta vychází z [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) a obsahuje rozšíření vyvíjená a provozovaná na Nilan VP18 K.
 
-Aktuálně uložená verze: **2026.10.19.2**. Ověřená verze Home Assistant Core: **2026.10.2**. Kompatibilita konkrétních položek menu závisí na jednotce a jejím firmwaru; název repozitáře není potvrzením otestování všech variant VP18.
+Aktuální distribuční verze: **2026.10.19.3**. Provozní kód odpovídá verzi 2026.10.19.2 ověřené na Home Assistant Core **2026.10.2**; vydání .3 upravuje balení a metadata pro HACS. Kompatibilita konkrétních položek menu závisí na jednotce a jejím firmwaru; název repozitáře není potvrzením otestování všech variant VP18.
 
 ## Funkce
 
@@ -26,6 +28,8 @@ Model TUV je odhad ze senzorů a naučeného průběhu. Pasivní simulace pláno
 5. Otevřete **Nastavení → Zařízení a služby → Přidat integraci → Nilan CTS600**.
 
 Repozitář lze přidat ručně; toto není tvrzení o jeho zařazení do výchozího katalogu HACS.
+
+V nabídce stažení vyberte vydanou verzi. HACS instaluje soubory přímo z adresáře `custom_components/nilan_cts600` příslušného GitHub vydání; ruční rozbalování ani vytváření další vnořené složky není potřeba. Přehled vydání je na stránce [Releases](https://github.com/honasek/Nilan-VP18c/releases).
 
 Při ruční instalaci zkopírujte adresář `custom_components/nilan_cts600` do stejné cesty v konfiguraci HA a restartujte HA. Doména je `nilan_cts600`, proto se tato varianta instaluje na místo dosavadní integrace stejné domény.
 
@@ -57,16 +61,40 @@ Model a simulace mohou používat pomocníky a měřicí entity z konkrétní do
 
 ## Vývoj a ověření
 
+Distribuční struktura odpovídá kategorii HACS **Integration**:
+
+```text
+hacs.json
+README.md
+LICENSE
+custom_components/
+  nilan_cts600/
+    manifest.json
+    __init__.py
+    brand/
+    translations/
+    …ostatní moduly a services.yaml…
+docs/             # historická dokumentace; neinstaluje se do HA
+script/           # kontrola repozitáře
+tests/            # testy; neinstalují se do HA
+.github/workflows/validate.yml
+```
+
+`content_in_root` a `zip_release` jsou vypnuté: používá se standardní adresář integrace v repozitáři, bez samostatného instalačního ZIP souboru.
+
 ```sh
 python -m pip install -r requirements-test.txt
+python script/validate_repository.py
 python -m pytest tests -q
 python -m compileall -q custom_components
 ```
 
 Přiložené přenositelné testy ověřují tepelný model bez připojení k fyzické jednotce. Nejde o úplný test hardwaru nebo všech ovládacích cest.
 
+Při každém pushi a pull requestu běží oficiální **HACS Action**, **Home Assistant Hassfest** a kontrola struktury s testy modelu. Před vydáním musí projít všechny kontroly; tag vydání musí odpovídat `version` v `manifest.json`. Změny jednotlivých verzí jsou v [CHANGELOG.md](CHANGELOG.md).
+
 ## Původ a licence
 
 Původní autor protokolu a integrace: **frodef**. Původní projekt: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
 
-Původní licenci **The Unlicense** zachovává [LICENSE](LICENSE). Historický [UPSTREAM_README.md](custom_components/nilan_cts600/UPSTREAM_README.md) je přiložen kvůli původu projektu; jeho postup pro původní variantu nenahrazuje návod výše pro tuto TCP variantu.
+Původní licenci **The Unlicense** zachovává [LICENSE](LICENSE). Historický [UPSTREAM_README.md](docs/UPSTREAM_README.md) je přiložen kvůli původu projektu; jeho postup pro původní variantu nenahrazuje návod výše pro tuto TCP variantu.

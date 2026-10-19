@@ -1,4 +1,6 @@
 {
   "name": "Nilan VP18c / CTS600",
-  "homeassistant": "2026.10.2"
+  "homeassistant": "2026.10.2",
+  "content_in_root": false,
+  "zip_release": false
 }
