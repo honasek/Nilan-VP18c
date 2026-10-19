@@ -37,6 +37,60 @@ For manual installation, copy `custom_components/nilan_cts600` to the same path 
 
 The reference gateway for this integration is the **Waveshare RS232/485/422 TO POE ETH (B)**. See the [manufacturer's documentation](https://www.waveshare.com/wiki/RS232/485/422_TO_POE_ETH_(B)) for wiring and gateway configuration.
 
+### 1. Prepare the installation
+
+You need the Waveshare gateway, an Ethernet connection, PoE or a separate power supply supported by the gateway, a twisted pair for RS485, and a working Home Assistant room temperature sensor to replace the panel's T15 sensor. Keep the original panel available for manual restoration.
+
+Before disconnecting anything, record the unit's operating mode, temperatures, ventilation settings and schedule. Photograph the existing panel wiring and obtain the wiring diagram for your exact unit and control-board revision.
+
+### 2. Connect the gateway to the CTS600 control board
+
+Disconnect the Nilan unit from its mains supply before opening the electrical compartment or changing wiring. The compartment contains mains-voltage circuits; have a qualified installer perform work that requires electrical competence.
+
+1. Locate the original CTS600 panel connection on the main control board, identified as **CN6 in this installation**. Verify the connector and each signal against the unit's wiring diagram and board markings. Other controller families and board revisions can use different connectors.
+2. Identify the two RS485 communication conductors and the panel power conductors. Do not identify them by wire color alone. This README does not provide a verified numbered CN6 pinout for every VP18 board; do not infer pin numbers or connector orientation from the table below.
+3. Disconnect the original panel from the communication bus. This integration takes its place as the panel; do not operate both in parallel.
+4. Configure the Waveshare hardware for **two-wire RS485** using the interface selection and wiring instructions for your gateway revision. Connect the communication pair as follows:
+
+| CTS600 panel connection on the main board | Waveshare connection |
+| --- | --- |
+| Verified RS485 A signal | RS485 A / positive data terminal, as identified in the gateway's RS485 wiring diagram |
+| Verified RS485 B signal | RS485 B / negative data terminal, as identified in the gateway's RS485 wiring diagram |
+| Panel supply +12 V | Leave disconnected from the gateway and individually insulate the unused conductor |
+| Panel supply return / 0 V | Leave disconnected in this two-wire installation and individually insulate the unused conductor |
+
+Use the gateway's **RS485** terminal assignments, not its RS232 pins or the separate RS422 receive pair. A/B and +/- naming can differ between manufacturers: check both diagrams before connecting. Do not add RS422 terminal bridges unless the gateway's instructions explicitly require them for RS485 mode.
+
+5. Secure the twisted pair and provide strain relief. Keep the low-voltage wiring separated from mains wiring. Apply termination and shielding according to the unit's and gateway's instructions for the actual cable run; do not add resistors or ground connections by guesswork.
+6. Power the gateway from **PoE or its own suitable external supply** and connect Ethernet to the Home Assistant network. The panel's 12 V output is not used to power the gateway in this reference installation. Never connect panel power to RS485 data terminals.
+7. Check the wiring, close the electrical compartment and restore power to the Nilan unit.
+
+The two-wire panel-replacement approach is also described in the [original integration's physical connection guide](https://github.com/frodef/nilan-cts600-homeassistant#physical-connection). Its photographs refer to the original author's unit, not a verified pinout for your board.
+
+### 3. Configure the Waveshare gateway
+
+Use the gateway's web interface or the manufacturer's configuration utility to set a reachable LAN address. Reserve that address in DHCP or configure a suitable static address. Set these parameters, save them and restart the gateway if required:
+
+| Setting | Value for this integration |
+| --- | --- |
+| Serial interface | Two-wire RS485 |
+| Baud rate | 19200 |
+| Data bits | 8 |
+| Parity | None |
+| Stop bits | 2 |
+| Network mode | TCP Server; Home Assistant connects as the client |
+| TCP listening port | 4196, or another chosen port also entered in Home Assistant |
+| Conversion protocol | NONE / transparent transmission |
+| Multi-host / multiple control clients | Disabled; use Home Assistant as the sole control client |
+
+Do not select Modbus TCP-to-RTU conversion. Disable any configured registration packets, application heartbeat payloads or automatic polling that would inject extra bytes into the serial stream. Close serial test tools before starting the integration. No virtual COM port driver is needed on the Home Assistant host.
+
+### 4. Install and configure Home Assistant
+
+Install the integration using the [HACS instructions above](#installation-with-hacs), then restart Home Assistant. Under **Settings → Devices & services → Helpers**, create a **Toggle** helper for control permission and leave it off for initial setup. Make sure your room temperature sensor is available and reporting a fresh value before adding the integration.
+
+Open **Settings → Devices & services → Add integration → Nilan CTS600**, enter the gateway address and listening port, select your T15 sensor and control helper, and confirm the panel disconnection only after completing the wiring steps above. The following notes explain the setup behavior and sensor requirements.
+
 The integration replaces the CTS600 control panel and uses its communication protocol. It is not a standard CTS602 Modbus TCP integration. Use transparent TCP transport and configure the gateway for **19200 baud, 8N2, Protocol NONE**. Setup requires confirmation that the original panel has been disconnected and the CN6 wiring has been checked.
 
 Creating a configuration starts panel emulation, sends the T15 room temperature and switches the menu language to English. Turning off the control unlock helper blocks user control commands, but does not stop communication or panel emulation.
@@ -50,6 +104,17 @@ In the setup form, select:
 The room sensor entities prefilled in the form come from the author's installation. Replace them with your own sensors when setting up a new installation.
 
 The default maximum T15 reading age is 15 minutes. If `input_number.nilan_t15_max_age_minutes` exists, its value is used within the range 1–60 minutes. Missing or invalid temperature readings block control commands.
+
+### 5. Verify operation
+
+1. Check that the integration connects and that the display/status and temperature entities update. Confirm that T15 follows the selected room sensor and that reported temperatures are plausible.
+2. Review the unit's alarms and the Home Assistant logs. A successful TCP connection alone does not prove that the RS485 wiring or panel protocol is working.
+3. Turn on the control unlock helper when ready. Test a small, reversible change to fan speed or target temperature and verify the result from the reported unit state. Restore the desired settings afterward.
+4. Check ventilation, operating modes and both DHW controls against the functions supported by your unit. Test backup T15 selection and connection recovery under supervision before relying on unattended operation.
+
+If TCP cannot connect, check the gateway address, listening port, LAN routing and whether another client holds the connection. If TCP connects but CTS600 data does not update, check two-wire RS485 mode, the verified A/B assignments, 19200 8N2, transparent protocol and physical panel disconnection. Power down before changing wiring.
+
+To restore the physical panel, first disable the integration so it stops emulating the panel, isolate the unit's power, disconnect the gateway's communication pair and reconnect the original panel exactly as documented before installation. Close the compartment, restore power and verify normal panel operation. Turning off the control unlock helper alone does not stop panel emulation.
 
 ## Services and stored data
 
