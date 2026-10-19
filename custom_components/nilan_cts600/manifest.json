@@ -1,0 +1,15 @@
+{
+  "domain": "nilan_cts600",
+  "name": "Nilan CTS600",
+  "codeowners": [
+    "@honasek"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/honasek/Nilan-VP18c",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/honasek/Nilan-VP18c/issues",
+  "requirements": [
+    "pymodbus==3.13.1"
+  ],
+  "version": "2026.10.19.2"
+}

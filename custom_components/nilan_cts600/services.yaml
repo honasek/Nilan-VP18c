@@ -1,0 +1,77 @@
+set_weekly_slot:
+  name: Nastavit krok týdenního programu
+  description: Uloží a novým čtením ověří jeden ze šesti kroků vybraného dne. Vyžaduje odemčené ovládání.
+  fields:
+    entry_id:
+      name: ID konfigurace
+      selector:
+        text:
+    day:
+      required: true
+      selector:
+        select:
+          options: [MON, TUE, WED, THU, FRI, SAT, SUN]
+    slot:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 6
+          mode: box
+    clock:
+      required: true
+      description: HH:MM nebo OFF. Čas musí být dosažitelný v daném firmware.
+      selector:
+        text:
+    fan:
+      required: true
+      description: 0 vypne větrání v tomto kroku; 1–4 jsou výkonové stupně.
+      selector:
+        number:
+          min: 0
+          max: 4
+          mode: box
+    temperature:
+      required: true
+      selector:
+        number:
+          min: 5
+          max: 30
+          mode: box
+set_clock:
+  name: Nastavit hodiny CTS600
+  description: Bez zadaného času použije místní čas HA. Vyžaduje odemčené ovládání.
+  fields:
+    entry_id:
+      selector:
+        text:
+    datetime:
+      description: Volitelný ISO datum a čas s časovou zónou.
+      selector:
+        text:
+discover_menu_options:
+  name: Načíst dostupné volby menu
+  description: Při zprovoznění načte volby z editačního menu, zruší editaci a ověří nezměněnou uloženou hodnotu.
+  fields:
+    entry_id:
+      selector:
+        text:
+    setting:
+      required: true
+      selector:
+        select:
+          options: [air_curve_min, air_curve_max, summer_inlet_min, winter_inlet_min, summer_outdoor_min, user_duration]
+acknowledge_alarm:
+  name: Potvrdit konkrétní alarm
+  description: Jen konkrétní kód. Aktivní příčinu musí odstranit obsluha; controller může potvrzení odmítnout. Kromě filtru 19 vyžaduje servisní odemčení.
+  fields:
+    entry_id:
+      selector:
+        text:
+    code:
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 99
+          mode: box

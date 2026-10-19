@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "CTS600 přes transparentní TCP",
+        "description": "Odeslat až po odpojení původního panelu a ověření vodičů CN6. Nastavení spustí emulaci panelu, předávání T15 a přepne jazyk displeje na angličtinu. Na převodníku nastavte 19200 8N2 a Protocol NONE. Nabídky VP18 K vyžadují zkoušku při zprovoznění.",
+        "data": {
+          "name": "Název jednotky",
+          "host": "IP adresa nebo síťové jméno převodníku",
+          "tcp_port": "TCP port",
+          "sensor_T15": "Primární čidlo pokojové teploty T15",
+          "t15_max_age_seconds": "Maximální stáří T15 v sekundách",
+          "commands_enabled_entity": "Pomocník pro odemčení ovládání",
+          "panel_disconnected": "Původní panel je odpojen a zapojení je ověřené",
+          "sensor_T15_backup": "Záložní čidlo pokojové teploty T15"
+        }
+      }
+    },
+    "error": {
+      "invalid_host": "Zadejte IP adresu nebo síťové jméno bez URL a portu",
+      "invalid_t15": "T15 musí hlásit čerstvou číselnou teplotu 5–40 °C",
+      "panel_required": "Před spuštěním emulace odpojte původní panel a ověřte zapojení"
+    },
+    "abort": {
+      "already_configured": "Toto připojení převodníku je již nastavené"
+    }
+  }
+}
