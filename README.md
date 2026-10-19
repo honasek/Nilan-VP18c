@@ -35,6 +35,8 @@ For manual installation, copy `custom_components/nilan_cts600` to the same path 
 
 ## Connection and initial setup
 
+> **The physical CTS600 control panel and this integration through the gateway cannot operate at the same time.** The integration emulates and replaces the panel. Disconnect the original panel from the RS485 bus before starting the integration. Turning off the control unlock helper does not stop panel emulation; disable the integration before reconnecting the physical panel.
+
 The reference gateway for this integration is the **Waveshare RS232/485/422 TO POE ETH (B)**. See the [manufacturer's documentation](https://www.waveshare.com/wiki/RS232/485/422_TO_POE_ETH_(B)) for wiring and gateway configuration.
 
 ### 1. Prepare the installation
