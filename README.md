@@ -1,67 +1,67 @@
-# Nilan VP18c / CTS600 pro Home Assistant
+# Nilan VP18c / CTS600 for Home Assistant
 
 [![Validate](https://github.com/honasek/Nilan-VP18c/actions/workflows/validate.yml/badge.svg)](https://github.com/honasek/Nilan-VP18c/actions/workflows/validate.yml)
 
-Custom integrace řídicího systému **Nilan CTS600** s připojením přes transparentní TCP–RS485 bránu. Tato varianta vychází z [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) a obsahuje rozšíření vyvíjená a provozovaná na Nilan VP18 K.
+A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Aktuální distribuční verze: **2026.10.19.3**. Provozní kód odpovídá verzi 2026.10.19.2 ověřené na Home Assistant Core **2026.10.2**; vydání .3 upravuje balení a metadata pro HACS. Kompatibilita konkrétních položek menu závisí na jednotce a jejím firmwaru; název repozitáře není potvrzením otestování všech variant VP18.
+Current distribution version: **2026.10.19.3**. The runtime code matches version 2026.10.19.2, tested on Home Assistant Core **2026.10.2**; release .3 updates packaging and metadata for HACS. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
 
-## Funkce
+## Features
 
-- Klimatická entita: provozní režim, cílová teplota a stupně ventilace.
-- Předvolby Úsporný / Komfortní / Více teplé vody podle dostupného menu.
-- Teploty, displej, provozní stav a alarmy CTS600.
-- Ovládání podporovaných položek uživatelského a servisního menu, hodin a týdenního programu.
-- Samostatné entity TUV: kompresor s teplotou T12 a spirála s teplotou T11.
-- Lokální evidence údržby filtru s datem poslední údržby.
-- Odhad tepelné zásoby TUV, krátkodobého výhledu a pasivní simulace plánování.
-- Primární a záložní pokojový senzor T15, kontrola platnosti teploty a samostatné povolení ovládání.
+- Climate entity with operating mode, target temperature and fan speed.
+- Economy, Comfort and More hot water presets, where supported by the unit's menu.
+- CTS600 temperatures, display, operating status and alarms.
+- Controls for supported user and service menu settings, the clock and the weekly schedule.
+- Separate domestic hot water (DHW) controls: compressor using T12 and electric heater using T11.
+- Local filter maintenance tracking with the date of the last service.
+- Estimated DHW thermal reserve, short-term forecasts and passive planning simulation.
+- Primary and backup T15 room temperature sensors, temperature validation and a separate control unlock helper.
 
-Model TUV je odhad ze senzorů a naučeného průběhu. Pasivní simulace plánování sama nepřepíná zařízení. Kompletní osobní automatizace, energetický plánovač a dashboardy autora nejsou součástí této integrace.
+The DHW model provides estimates based on sensor readings and learned behavior. The passive planning simulation does not operate the unit. The author's personal automations, energy planner and dashboards are outside the scope of this integration.
 
-## Instalace přes HACS
+## Installation with HACS
 
-1. V HACS otevřete nabídku **⋮ → Vlastní repozitáře / Custom repositories**.
-2. Přidejte `https://github.com/honasek/Nilan-VP18c`, kategorii **Integration**.
-3. Stáhněte **Nilan VP18c / CTS600** a restartujte Home Assistant.
-4. Připravte pokojový senzor a pomocníka pro povolení ovládání podle následující části.
-5. Otevřete **Nastavení → Zařízení a služby → Přidat integraci → Nilan CTS600**.
+1. In HACS, open **⋮ → Custom repositories**.
+2. Add `https://github.com/honasek/Nilan-VP18c` with the **Integration** category.
+3. Download **Nilan VP18c / CTS600** and restart Home Assistant.
+4. Prepare a room temperature sensor and a control unlock helper as described below.
+5. Open **Settings → Devices & services → Add integration → Nilan CTS600**.
 
-Repozitář lze přidat ručně; toto není tvrzení o jeho zařazení do výchozího katalogu HACS.
+The repository can be added as a custom repository. It is not currently listed in the default HACS catalog.
 
-V nabídce stažení vyberte vydanou verzi. HACS instaluje soubory přímo z adresáře `custom_components/nilan_cts600` příslušného GitHub vydání; ruční rozbalování ani vytváření další vnořené složky není potřeba. Přehled vydání je na stránce [Releases](https://github.com/honasek/Nilan-VP18c/releases).
+Select a published version in the download dialog. HACS installs files from `custom_components/nilan_cts600` in the corresponding GitHub release; no manual extraction or extra nested folder is needed. See [Releases](https://github.com/honasek/Nilan-VP18c/releases) for available versions.
 
-Při ruční instalaci zkopírujte adresář `custom_components/nilan_cts600` do stejné cesty v konfiguraci HA a restartujte HA. Doména je `nilan_cts600`, proto se tato varianta instaluje na místo dosavadní integrace stejné domény.
+For manual installation, copy `custom_components/nilan_cts600` to the same path in your Home Assistant configuration directory and restart Home Assistant. The integration domain is `nilan_cts600`, so this variant replaces any existing integration using that domain.
 
-## Připojení a první nastavení
+## Connection and initial setup
 
-Integrace nahrazuje panel CTS600 a používá jeho komunikační protokol. Nejde o běžnou integraci CTS602 přes Modbus TCP. Použijte transparentní TCP přenos, na bráně **19200 baud, 8N2, Protocol NONE**. Formulář vyžaduje potvrzení odpojení původního panelu a ověření zapojení CN6.
+The integration replaces the CTS600 control panel and uses its communication protocol. It is not a standard CTS602 Modbus TCP integration. Use transparent TCP transport and configure the gateway for **19200 baud, 8N2, Protocol NONE**. Setup requires confirmation that the original panel has been disconnected and the CN6 wiring has been checked.
 
-Při vytvoření konfigurace se spouští emulace panelu, posílá se pokojová teplota T15 a menu se přepíná do angličtiny. Vypnutý pomocník pro ovládání blokuje uživatelské ovládací příkazy, ale není vypínačem komunikace ani emulace panelu.
+Creating a configuration starts panel emulation, sends the T15 room temperature and switches the menu language to English. Turning off the control unlock helper blocks user control commands, but does not stop communication or panel emulation.
 
-Ve formuláři vyberte:
+In the setup form, select:
 
-- IP adresu nebo hostname brány a její TCP port; předvyplněný port je 4196, skutečná hodnota musí odpovídat bráně.
-- Primární, případně záložní pokojový teplotní senzor T15. Musí poskytovat čerstvou číselnou teplotu v °C v rozsahu 5–40 °C.
-- Existující pomocník typu Přepínač (`input_boolean`) pro povolení ovládání. Lze jej vytvořit v **Nastavení → Zařízení a služby → Pomocníci**.
+- The gateway IP address or hostname and TCP port. The default port is 4196; use the port configured on your gateway.
+- A primary and, optionally, a backup T15 room temperature sensor. Each must provide a fresh numeric temperature in °C within the range 5–40 °C.
+- An existing Toggle helper (`input_boolean`) to unlock controls. Create one under **Settings → Devices & services → Helpers** if needed.
 
-Předvyplněné entity pokojových senzorů jsou původní hodnoty z instalace autora. Při nové instalaci je změňte na vlastní senzory.
+The room sensor entities prefilled in the form come from the author's installation. Replace them with your own sensors when setting up a new installation.
 
-Výchozí maximální stáří T15 je 15 minut. Pokud existuje `input_number.nilan_t15_max_age_minutes`, používá se jeho hodnota 1–60 minut. Chybějící nebo neplatná teplota blokuje ovládání.
+The default maximum T15 reading age is 15 minutes. If `input_number.nilan_t15_max_age_minutes` exists, its value is used within the range 1–60 minutes. Missing or invalid temperature readings block control commands.
 
-## Další části a uchování dat
+## Services and stored data
 
-Příkazy `set_clock`, `set_weekly_slot`, `discover_menu_options` a `acknowledge_alarm` jsou dostupné v doméně `nilan_cts600`; popis polí je v [services.yaml](custom_components/nilan_cts600/services.yaml).
+The `set_clock`, `set_weekly_slot`, `discover_menu_options` and `acknowledge_alarm` actions are available under the `nilan_cts600` domain. Field descriptions are provided in [services.yaml](custom_components/nilan_cts600/services.yaml).
 
-Změny menu se provádějí přes serializované operace a ověřují zpětným čtením. Dostupnost konkrétní položky může být omezena firmwarem nebo servisním povolením.
+Menu changes use serialized operations and are verified by reading the value back. Individual settings may be restricted by the firmware or require service access.
 
-Datum údržby filtru, model TUV a naučená data se ukládají do úložiště Home Assistantu. Uložení data údržby neposílá příkaz jednotce a nepotvrzuje její alarm. Při aktualizaci kódu tyto uložené údaje nemažte.
+The filter maintenance date, DHW model and learned data are saved in Home Assistant storage. Saving a maintenance date does not send a command to the unit or acknowledge its alarm. Keep this stored data when updating the integration.
 
-Model a simulace mohou používat pomocníky a měřicí entity z konkrétní domácí konfigurace. Tento repozitář neobsahuje osobní `configuration.yaml`, packages, historii měření ani Lovelace. Jejich přenos vyžaduje vlastní nastavení entit; samotná instalace přes HACS je nevytváří.
+The model and simulation may use helpers and measurement entities from a particular home configuration. This repository does not include personal `configuration.yaml` files, packages, measurement history or Lovelace dashboards. These require your own entity configuration and are not created by HACS installation.
 
-## Vývoj a ověření
+## Development and validation
 
-Distribuční struktura odpovídá kategorii HACS **Integration**:
+The repository follows the HACS **Integration** directory layout:
 
 ```text
 hacs.json
@@ -73,14 +73,14 @@ custom_components/
     __init__.py
     brand/
     translations/
-    …ostatní moduly a services.yaml…
-docs/             # historická dokumentace; neinstaluje se do HA
-script/           # kontrola repozitáře
-tests/            # testy; neinstalují se do HA
+    ...other modules and services.yaml...
+docs/             # historical documentation; not installed in HA
+script/           # repository validation
+tests/            # tests; not installed in HA
 .github/workflows/validate.yml
 ```
 
-`content_in_root` a `zip_release` jsou vypnuté: používá se standardní adresář integrace v repozitáři, bez samostatného instalačního ZIP souboru.
+`content_in_root` and `zip_release` are disabled. HACS uses the standard integration directory in the repository without a separate installation ZIP asset.
 
 ```sh
 python -m pip install -r requirements-test.txt
@@ -89,12 +89,12 @@ python -m pytest tests -q
 python -m compileall -q custom_components
 ```
 
-Přiložené přenositelné testy ověřují tepelný model bez připojení k fyzické jednotce. Nejde o úplný test hardwaru nebo všech ovládacích cest.
+The included portable tests validate the thermal model without connecting to a physical unit. They do not provide complete coverage of hardware behavior or every control path.
 
-Při každém pushi a pull requestu běží oficiální **HACS Action**, **Home Assistant Hassfest** a kontrola struktury s testy modelu. Před vydáním musí projít všechny kontroly; tag vydání musí odpovídat `version` v `manifest.json`. Změny jednotlivých verzí jsou v [CHANGELOG.md](CHANGELOG.md).
+Every push and pull request runs the official **HACS Action**, **Home Assistant Hassfest**, repository validation and model tests. All checks must pass before a release, and the release tag must match `version` in `manifest.json`. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-## Původ a licence
+## Credits and license
 
-Původní autor protokolu a integrace: **frodef**. Původní projekt: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
+Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
 
-Původní licenci **The Unlicense** zachovává [LICENSE](LICENSE). Historický [UPSTREAM_README.md](docs/UPSTREAM_README.md) je přiložen kvůli původu projektu; jeho postup pro původní variantu nenahrazuje návod výše pro tuto TCP variantu.
+The original **Unlicense** is preserved in [LICENSE](LICENSE). The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for attribution and background. Its instructions describe the original variant; use the instructions above for this TCP variant.
