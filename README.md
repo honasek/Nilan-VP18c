@@ -52,14 +52,16 @@ Disconnect the Nilan unit from its mains supply before opening the electrical co
 1. Locate the original CTS600 panel connection on the main control board, identified as **CN6 in this installation**. Verify the connector and each signal against the unit's wiring diagram and board markings. Other controller families and board revisions can use different connectors.
 2. Identify the two RS485 communication conductors and the panel power conductors. Do not identify them by wire color alone. This README does not provide a verified numbered CN6 pinout for every VP18 board; do not infer pin numbers or connector orientation from the table below.
 3. Disconnect the original panel from the communication bus. This integration takes its place as the panel; do not operate both in parallel.
-4. Configure the Waveshare hardware for **two-wire RS485** using the interface selection and wiring instructions for your gateway revision. Connect the communication pair as follows:
+4. Configure the Waveshare hardware for **two-wire RS485** using the interface selection and wiring instructions for your gateway revision. The table below documents the repository owner's reported installation, including its separate 0 V connection:
 
 | CTS600 panel connection on the main board | Waveshare connection |
 | --- | --- |
 | Verified RS485 A signal | RS485 A / positive data terminal, as identified in the gateway's RS485 wiring diagram |
 | Verified RS485 B signal | RS485 B / negative data terminal, as identified in the gateway's RS485 wiring diagram |
 | Panel supply +12 V | Leave disconnected from the gateway and individually insulate the unused conductor |
-| Panel supply return / 0 V | Leave disconnected in this two-wire installation and individually insulate the unused conductor |
+| Control-board 0 V / panel supply return | Connected to the Waveshare terminal labeled **PE** in the repository owner's installation; see the note below |
+
+The **0 V → PE** connection above records the owner's actual wiring. It has not been independently verified against the electrical diagrams for both devices and is not a universal wiring requirement. Do not assume that a terminal labeled PE is interchangeable with signal ground or the gateway's DC power negative. Verify its function and whether this connection is permitted for your exact board and gateway revision before reproducing it. Here, “two-wire RS485” refers to the A/B data pair; the reported installation also has this third conductor.
 
 Use the gateway's **RS485** terminal assignments, not its RS232 pins or the separate RS422 receive pair. A/B and +/- naming can differ between manufacturers: check both diagrams before connecting. Do not add RS422 terminal bridges unless the gateway's instructions explicitly require them for RS485 mode.
 
