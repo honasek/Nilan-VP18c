@@ -35,6 +35,8 @@ For manual installation, copy `custom_components/nilan_cts600` to the same path 
 
 ## Connection and initial setup
 
+The reference gateway for this integration is the **Waveshare RS232/485/422 TO POE ETH (B)**. See the [manufacturer's documentation](https://www.waveshare.com/wiki/RS232/485/422_TO_POE_ETH_(B)) for wiring and gateway configuration.
+
 The integration replaces the CTS600 control panel and uses its communication protocol. It is not a standard CTS602 Modbus TCP integration. Use transparent TCP transport and configure the gateway for **19200 baud, 8N2, Protocol NONE**. Setup requires confirmation that the original panel has been disconnected and the CN6 wiring has been checked.
 
 Creating a configuration starts panel emulation, sends the T15 room temperature and switches the menu language to English. Turning off the control unlock helper blocks user control commands, but does not stop communication or panel emulation.
