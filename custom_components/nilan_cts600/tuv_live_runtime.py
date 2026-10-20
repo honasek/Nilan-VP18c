@@ -10,6 +10,7 @@ from homeassistant.helpers.event import async_track_time_interval, async_track_s
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.core import callback
 
 from .tuv_live import LiveControl, candidate
 
@@ -74,6 +75,7 @@ class TUVLiveRuntime(DataUpdateCoordinator):
             return self.control.enabled and proposal is not None and self._journal_error is None
         return await self.main.async_live_dhw(expected, value, restoring, guard)
 
+    @callback
     def _schedule(self, *args):
         if not self._closed and (self._task is None or self._task.done()):
             self._task = self.hass.async_create_task(self._tick(), 'Nilan DHW live control')
