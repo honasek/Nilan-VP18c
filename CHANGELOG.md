@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.20.1
+
+- Mark the live DHW scheduler as a Home Assistant callback so timer and state-change handlers run on the event loop.
+- Fix repeated thread-safety exceptions and unawaited `TUVLiveRuntime._tick` coroutine warnings, including when live control is disabled.
+- Add a device-free regression check using real Home Assistant timer, state-change and coordinator dispatch.
+- Preserve live-control permissions, default-off behavior, target recovery, settings and existing entity IDs.
+
 ## 2026.10.19.4
 
 - Add a separate opt-in live DHW delay switch, requiring existing control permissions and shadow collection.

@@ -4,7 +4,7 @@
 
 A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Current version: **2026.10.19.4**, targeting Home Assistant Core **2026.10.2**. This release adds explicitly enabled DHW delay control alongside the passive model. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
+Current version: **2026.10.20.1**, targeting Home Assistant Core **2026.10.2**. This release fixes timer and state-change scheduling of the opt-in DHW delay control. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
 
 ## Features
 
@@ -175,6 +175,8 @@ python -m compileall -q custom_components
 ```
 
 The included portable tests validate the thermal model without connecting to a physical unit. They do not provide complete coverage of hardware behavior or every control path.
+
+To check the live DHW scheduler in a Python environment containing Home Assistant Core **2026.10.2**, run `python script/validate_tuv_runtime.py`. This isolated check uses temporary storage, synthetic states and a command boundary that rejects every device write. It exercises real HA timer, state-change and coordinator callbacks, concurrent triggers and shutdown. It does not load a running HA instance or connect to a controller. Use `--component PATH` to validate an integration source directory outside this checkout.
 
 Every push and pull request runs the official **HACS Action**, **Home Assistant Hassfest**, repository validation and model tests. All checks must pass before a release, and the release tag must match `version` in `manifest.json`. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
