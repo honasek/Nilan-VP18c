@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.21.2
+
+- Refresh and verify each main-screen edit field before changing the room target or fan level; do not trust the preceding ENTER response or pre-edit value.
+- Step from the current confirmed value, verify each individual step and confirm the saved value after leaving edit mode.
+- Bound delayed-frame refreshes to three no-key requests; never replay uncertain steps or commits. Preserve the coordinator's independent readback and command guards.
+- Add synthetic-panel tests for delayed and changed snapshots, wrong fields, limits and uncertain writes.
+
 ## 2026.10.21.1
 
 - Wait for both T11/T12 readings before updating the DHW model or refreshing forecasts; skip incomplete samples without a traceback.
