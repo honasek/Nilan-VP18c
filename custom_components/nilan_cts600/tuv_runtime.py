@@ -140,7 +140,16 @@ class TUVRuntime(DataUpdateCoordinator):
         at=getattr(self.main,'last_show_data_success',None)
         if not self.main.last_update_success:return False,'Spojení s jednotkou není dostupné'
         if not finite(at) or time.time()-at > 300 or at > time.time()+5:return False,'Čeká na čerstvé T11/T12 z přehledu dat'
+        data=self.main.data or {}
+        if not all(finite(data.get(key)) for key in ('T11','T12')):return False,'Čekám na T11/T12'
         return True,None
+
+    @callback
+    def _publish_waiting(self,reason,data=None):
+        self._shadow_key=None
+        previous=self.data if data is None else data
+        self.async_set_updated_data({**(previous or {}),'valid':False,'quality':'waiting','reason':reason,
+                                    'shadow':{**empty_plan(time.time(),reason,'waiting'),'learning':self.shadow.summary()}})
 
     @callback
     def _schedule(self):
@@ -148,9 +157,7 @@ class TUVRuntime(DataUpdateCoordinator):
         if self._task is not None and not self._task.done():return
         valid,reason=self._validity()
         if not valid:
-            self._shadow_key=None
-            self.async_set_updated_data({**(self.data or {}),'valid':False,'quality':'waiting','reason':reason,
-                                        'shadow':{**empty_plan(time.time(),reason,'waiting'),'learning':self.shadow.summary()}})
+            self._publish_waiting(reason)
             return
         at=self.main.last_show_data_success
         if self.model.last is not None and at<=self.model.last.at:
@@ -209,6 +216,10 @@ class TUVRuntime(DataUpdateCoordinator):
             return blank(key[1],'forecast_error','Čas do ohřevu není právě dostupný')
 
     async def _refresh_eta(self):
+        valid,reason=self._validity()
+        if not valid:
+            self._publish_waiting(reason)
+            return
         key=self._forecast_key()
         result=await self.hass.async_add_executor_job(self._forecast_sync,key)
         if key!=self._forecast_key():return
@@ -224,8 +235,11 @@ class TUVRuntime(DataUpdateCoordinator):
                 _LOGGER.warning('TUV shadow: zápis plánu se nezdařil',exc_info=True)
         self._eta_key=key
         valid,reason=self._validity()
-        if not valid:result['shadow']={**empty_plan(time.time(),reason,'waiting'),'learning':self.shadow.summary()}
-        self.async_set_updated_data({**(self.data or {}),**result,'valid':valid,'reason':reason})
+        if not valid:
+            self._publish_waiting(reason)
+            return
+        quality=(self.model.last_snapshot or {}).get('quality','waiting')
+        self.async_set_updated_data({**(self.data or {}),**result,'quality':quality,'valid':True,'reason':None})
 
     def _shadow_sync(self,settings,error,result,observe):
         try:
@@ -262,6 +276,10 @@ class TUVRuntime(DataUpdateCoordinator):
 
     async def _step(self):
         try:
+            valid,reason=self._validity()
+            if not valid:
+                self._publish_waiting(reason)
+                return
             sample=self._sample()
             self._attempted_at=sample.at
             key=self._forecast_key()
@@ -298,8 +316,10 @@ class TUVRuntime(DataUpdateCoordinator):
                         _LOGGER.warning('TUV shadow: učení nelze uložit',exc_info=True)
             result['shadow']['io_error']=self.shadow_io_error
             valid,reason=self._validity()
-            if not valid:result['shadow']={**empty_plan(time.time(),reason,'waiting'),'learning':self.shadow.summary()}
-            self.async_set_updated_data({**result,'valid':valid,'reason':reason,'io_error':self.io_error})
+            if not valid:
+                self._publish_waiting(reason,{**result,'io_error':self.io_error})
+                return
+            self.async_set_updated_data({**result,'valid':True,'reason':None,'io_error':self.io_error})
         except Exception:
             self.model_error='Model nemůže vyhodnotit aktuální data'
             _LOGGER.warning('TUV: model nebyl aktualizován; ovládání jednotky není ovlivněno',exc_info=True)

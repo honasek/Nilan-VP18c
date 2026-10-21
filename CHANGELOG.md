@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.21.1
+
+- Wait for both T11/T12 readings before updating the DHW model or refreshing forecasts; skip incomplete samples without a traceback.
+- Preserve learned state and mark reserve, forecasts and shadow plans unavailable while waiting; resume automatically when complete readings return.
+- Recheck input availability when scheduled work starts and before publishing results. Keep strict physical validation and unexpected-error diagnostics.
+- Add a device-free native HA regression check covering missing inputs, recovery and scheduling races.
+
 ## 2026.10.20.1
 
 - Mark the live DHW scheduler as a Home Assistant callback so timer and state-change handlers run on the event loop.
