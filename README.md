@@ -4,7 +4,7 @@
 
 A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Current version: **2026.10.21.1**, targeting Home Assistant Core **2026.10.2**. This release makes the DHW observer wait for complete T11/T12 readings without losing its learned state. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
+Current version: **2026.10.21.2**, targeting Home Assistant Core **2026.10.2**. This release verifies fresh edit fields and individual steps when changing the room target or fan level. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
 
 ## Features
 
@@ -175,6 +175,8 @@ python -m compileall -q custom_components
 ```
 
 The included portable tests validate the thermal model without connecting to a physical unit. They do not provide complete coverage of hardware behavior or every control path.
+
+Synthetic-panel tests also exercise the real thermostat and fan command methods with delayed action responses, changed edit values and failed confirmations. Refreshes use only no-key requests; uncertain steps and commits are not replayed. The saved value must match the request, including the coordinator's separate readback. Passing synthetic tests does not establish hardware timing or verify an actual room/fan change on a controller.
 
 To check the live DHW scheduler in a Python environment containing Home Assistant Core **2026.10.2**, run `python script/validate_tuv_runtime.py`. This isolated check uses temporary storage, synthetic states and a command boundary that rejects every device write. It exercises real HA timer, state-change and coordinator callbacks, concurrent triggers and shutdown. It does not load a running HA instance or connect to a controller. Use `--component PATH` to validate an integration source directory outside this checkout.
 

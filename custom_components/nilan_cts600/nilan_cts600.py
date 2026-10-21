@@ -601,49 +601,84 @@ class CTS600:
              ]
         ])
     
+    @staticmethod
+    def _top_frame(display):
+        """Parse the main screen and identify the complete, single blinking field."""
+        clean = display.replace('{', '').replace('}', '')
+        match = re.fullmatch(
+            r'(?P<mode>AUTO|HEAT|COOL|OFF)[^/{}]*/(?P<flow>>[1-4]<)\s+(?P<temperature>\d{1,2})°C', clean)
+        if match is None or not 5 <= int(match['temperature']) <= 30:
+            return None
+        fields = {'mode': match['mode'], 'flow': int(match['flow'][1:-1]),
+                  'temperature': int(match['temperature'])}
+        blinking = list(re.finditer(r'\{([^{}]+)\}', display))
+        if not blinking and '{' not in display and '}' not in display:
+            return fields, None
+        if len(blinking) != 1 or display.count('{') != 1 or display.count('}') != 1:
+            return None
+        blink = blinking[0]
+        text = blink[1].strip()
+        start = blink.start() + len(blink[1]) - len(blink[1].lstrip())
+        for field in fields:
+            if (start, start + len(text)) == match.span(field) and text == match[field]:
+                return fields, field
+        return None
+
+    def _read_top_field(self, field, *, editing, expected=None, previous=None):
+        """Refresh only; never repeat ENTER or a possibly applied UP/DOWN."""
+        display = None
+        for _ in range(3):
+            display = self.key(Key.NONE)
+            frame = self._top_frame(display)
+            if frame is None or frame[1] != (field if editing else None):
+                continue
+            value = frame[0][field]
+            if expected is None or value == expected:
+                return value, display
+            if previous is not None and value != previous:
+                raise NilanCTS600ProtocolError(
+                    f'Unexpected {field} change while editing: {previous!r} -> {value!r}')
+        raise NilanCTS600ProtocolError(
+            f'CTS600 did not confirm {field} {"edit field" if editing else "readback"}: {display!r}')
+
+    def _set_top_value(self, field, target):
+        self.resetMenu()
+        self._read_top_field(field, editing=False)
+        self.key_enter()
+        current, _ = self._read_top_field('temperature', editing=True)
+        if field == 'flow':
+            self.key_enter()
+            self._read_top_field('mode', editing=True)
+            self.key_enter()
+            current, _ = self._read_top_field('flow', editing=True)
+        # Use the value confirmed in the current edit field, not the reset snapshot.
+        for _ in range(25 if field == 'temperature' else 3):
+            if current == target:
+                break
+            self._read_top_field(field, editing=True, expected=current)
+            direction = 1 if target > current else -1
+            self.key(Key.UP if direction > 0 else Key.DOWN)
+            current, _ = self._read_top_field(
+                field, editing=True, expected=current + direction, previous=current)
+        if current != target:
+            raise NilanCTS600ProtocolError(f'CTS600 {field} target not reached')
+        self._read_top_field(field, editing=True, expected=target)
+        self.key_enter()  # Commit exactly once; ENTER may select the next field.
+        self.resetMenu()
+        _, display = self._read_top_field(field, editing=False, expected=target)
+        return display
+
     def setThermostat (self, celsius):
-        """ Set thermostat to CELSIUS degrees. """
-        def getBlinkText (string):
-            return string[string.find('{')+1:string.find('}')].strip()
-
-        if not 5 <= celsius <= 30:
-            raise Exception (f'Illegal thermostat value: {celsius}')
-
-        currentThermostat = parseCelsius(self.resetMenu())
-        if f'{currentThermostat}' != getBlinkText (self.key_enter()):
-            x = self.key()
-            raise Exception ('Failed to enter thermostat input mode.', x, getBlinkText (x))
-        if celsius > currentThermostat:
-            for _ in range (0, celsius - currentThermostat):
-                self.key_up()
-        elif celsius < currentThermostat:
-            for _ in range (0, currentThermostat - celsius):
-                self.key_down()
-        self.key_enter() # Commit value
-        return self.key(Key.NONE)
+        """Set thermostat from fresh, verified edit values and confirm the commit."""
+        if type(celsius) is not int or not 5 <= celsius <= 30:
+            raise NilanCTS600Exception(f'Illegal thermostat value: {celsius}')
+        return self._set_top_value('temperature', celsius)
 
     def setFlow (self, flow):
-        """ Set fan flow level to FLOW, i.e. 1-4. """
-        def getBlinkText (string):
-            return string[string.find('{')+1:string.find('}')].strip()
-
-        if not 1 <= flow <= 4:
-            raise Exception (f'Illegal flow value: {flow}')
-
-        currentFlow = parseFlow(self.resetMenu())
-        self.key_enter() # thermostat
-        self.key_enter() # heat/cool mode
-        if f'>{currentFlow}<' != getBlinkText (self.key_enter()):
-            x = self.key()
-            raise Exception (f'Failed to set flow input mode ({currentFlow}).', x, getBlinkText (x))
-        if flow > currentFlow:
-            for _ in range (0, flow - currentFlow):
-                self.key_up()
-        elif flow < currentFlow:
-            for _ in range (0, currentFlow - flow):
-                self.key_down()
-        self.key_enter() # commit value
-        return self.key(Key.NONE)
+        """Set fan level from fresh, verified edit values and confirm the commit."""
+        if type(flow) is not int or not 1 <= flow <= 4:
+            raise NilanCTS600Exception(f'Illegal flow value: {flow}')
+        return self._set_top_value('flow', flow)
 
     def setLanguage (self, language):
         """ Set CTS600 display language to the first language that matches LANGUAGE. """
