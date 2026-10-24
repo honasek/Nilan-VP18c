@@ -1,0 +1,16 @@
+Nilan CTS600 / VP18 TCP integration
+
+This distribution and the modifications maintained by honasek are provided
+under the MIT License in LICENSE.
+
+The original CTS600 protocol implementation and Home Assistant integration
+were created by frodef:
+https://github.com/frodef/nilan-cts600-homeassistant
+
+The original code was released into the public domain under the Unlicense.
+That original grant is preserved in UPSTREAM_LICENSE alongside this notice
+in the installed integration, and in docs/UPSTREAM_LICENSE in the repository.
+It is not replaced by a claim of ownership over the original public-domain
+work. The historical upstream README is preserved in docs/UPSTREAM_README.md.
+
+Third-party dependencies retain their own licenses.

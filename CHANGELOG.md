@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.10.24.0
+
+- License the repository and installed integration under the standard MIT License, permitting commercial use and redistribution.
+- Preserve frodef's original public-domain Unlicense and attribution in the repository and HACS-installed integration.
+- Clarify the licensing terms in the README. No device-control behavior changes in this update.
+
 ## 2026.10.21.2
 
 - Refresh and verify each main-screen edit field before changing the room target or fan level; do not trust the preceding ENTER response or pre-edit value.
