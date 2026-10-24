@@ -188,4 +188,6 @@ Every push and pull request runs the official **HACS Action**, **Home Assistant 
 
 Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
 
-The original **Unlicense** is preserved in [LICENSE](LICENSE). The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for attribution and background. Its instructions describe the original variant; use the instructions above for this TCP variant.
+This distribution is licensed under the **[MIT License](LICENSE)**. It permits use, modification, redistribution and commercial use, subject to retaining the license and copyright notice.
+
+The original public-domain grant is preserved in [docs/UPSTREAM_LICENSE](docs/UPSTREAM_LICENSE) and included with the installed integration as `UPSTREAM_LICENSE`. [NOTICE](NOTICE) records the upstream attribution. The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for background; its instructions describe the original variant, so use the instructions above for this TCP variant.
