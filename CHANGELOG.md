@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.10.25.0
+
+- Ship translations/en.json with the full contents of strings.json so users without a dedicated translation receive English titles, field labels and error messages.
+- Validate that the English runtime translation exists and matches strings.json before publishing a release.
+- Address the English fallback review feedback in hacs/default#12584. No device-control behavior changes.
+
 ## 2026.10.24.0
 
 - License the repository and installed integration under the standard MIT License, permitting commercial use and redistribution.

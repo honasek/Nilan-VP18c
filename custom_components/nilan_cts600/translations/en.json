@@ -1,0 +1,28 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect CTS600 through transparent TCP",
+        "description": "Submit only after disconnecting the physical panel and confirming CN6 wiring. Setup starts panel emulation, sends T15 and switches the display language to English. Use 19200 8N2 and Protocol NONE on the gateway. VP18 K menus still require commissioning tests.",
+        "data": {
+          "name": "Device name",
+          "host": "Gateway IP address or hostname",
+          "tcp_port": "TCP port",
+          "sensor_T15": "Primary room temperature sensor (T15)",
+          "t15_max_age_seconds": "Maximum T15 age in seconds",
+          "commands_enabled_entity": "Control unlock helper",
+          "panel_disconnected": "Physical panel is disconnected and wiring has been verified",
+          "sensor_T15_backup": "Backup room temperature sensor (T15)"
+        }
+      }
+    },
+    "error": {
+      "invalid_host": "Enter an IP address or hostname without a URL or port",
+      "invalid_t15": "T15 must report a fresh, finite temperature of 5–40 °C",
+      "panel_required": "Disconnect the physical panel and verify wiring before starting emulation"
+    },
+    "abort": {
+      "already_configured": "This gateway connection is already configured"
+    }
+  }
+}
