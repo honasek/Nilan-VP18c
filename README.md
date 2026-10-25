@@ -146,8 +146,6 @@ The model and simulation may use helpers and measurement entities from a particu
 
 ## Development and validation
 
-The DHW shadow planner compares expected and stress **whole-day** demand patterns, checks a common horizon including subsequent morning/evening use, and compares the remaining tank state alongside electricity. See [DHW shadow simulation](docs/dhw-shadow.md) for candidate search, readiness/holding/comfort criteria, energy comparison rules and model limitations.
-
 The repository follows the HACS **Integration** directory layout:
 
 ```text
@@ -186,14 +184,16 @@ Run `python script/validate_tuv_observer.py` in the same environment to check in
 
 Every push and pull request runs the official **HACS Action**, **Home Assistant Hassfest**, repository validation and model tests. All checks must pass before a release, and the release tag must match `version` in `manifest.json`. See [CHANGELOG.md](CHANGELOG.md) for release history.
 
-## Credits and license
-
-Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
-
-The original **Unlicense** is preserved in [LICENSE](LICENSE). The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for attribution and background. Its instructions describe the original variant; use the instructions above for this TCP variant.
-
-### Thermal reserve reference and thermostat evidence
+## Thermal reserve reference and thermostat evidence
 
 Public DHW reserve uses the active compressor setpoint: 100% represents the 180 l tank at that setpoint, 0% remains T11 at or below 30 °C. A missing setpoint or a setpoint at/below 30 °C makes reserve unavailable. Physical learning remains independent of this display reference.
 
 A passive observer measures clean starts and stops from retained actual samples. It reports approximate hysteresis, source setpoint, uncertainty and direct evidence counts. Until three starts and three stops at the active target exist, a mature cohort may be explicitly transferred from another target; contradictory observations disable that transfer. A completed cycle can remain reached after cooling inside the supported band. Compressor-off alone never establishes completion. Shadow simulations use the same reference/band; none of this turns on live control.
+
+## Credits and license
+
+Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
+
+This distribution is licensed under the **[MIT License](LICENSE)**. It permits use, modification, redistribution and commercial use, subject to retaining the license and copyright notice.
+
+The original public-domain grant is preserved in [docs/UPSTREAM_LICENSE](docs/UPSTREAM_LICENSE) and included with the installed integration as `UPSTREAM_LICENSE`. [NOTICE](NOTICE) records the upstream attribution. The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for background; its instructions describe the original variant, so use the instructions above for this TCP variant.
