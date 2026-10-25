@@ -26,6 +26,13 @@ def validate() -> dict:
     if not (component / "brand" / "icon.png").is_file():
         raise ValueError("Integration brand icon is missing")
 
+    # Custom integrations use translations/en.json as their runtime fallback.
+    # strings.json alone does not supply labels to users without a translation.
+    strings = json.loads((component / "strings.json").read_text(encoding="utf-8"))
+    english = json.loads((component / "translations" / "en.json").read_text(encoding="utf-8"))
+    if english != strings:
+        raise ValueError("English runtime translation must match strings.json")
+
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     if not hacs.get("name") or hacs.get("content_in_root", False) or hacs.get("zip_release", False):
         raise ValueError("HACS manifest must describe the standard custom_components layout")
