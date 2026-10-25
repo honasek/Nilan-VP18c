@@ -45,6 +45,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         self._closed = False
         self._manual_until = 0
         self._next_scan = 0
+        self._transient_failures = 0
         self.last_success = None
         self.last_show_data_success = None
         self._last_profile_poll = None
@@ -125,12 +126,22 @@ class CTS600Coordinator(DataUpdateCoordinator):
             else:
                 self.cts600.updateData(False)
                 if scan:
-                    fresh=self.menu.read_show_data()
-                    self.cts600.data={key:value for key,value in self.cts600.data.items() if not (key.startswith('T') and key[1:].isdigit())}
-                    self.cts600.data.update(fresh)
-                    self._last_profile_poll = dt_util.utcnow().timestamp()
-                    for key in fresh:
-                        if key.startswith('T') and key[1:].isdigit():self.cts600.metaData[key]={'kind':'temperature'}
+                    try:
+                        fresh=self.menu.read_show_data()
+                    except MenuUnavailable as exc:
+                        # SHOW DATA is optional and panel navigation can briefly
+                        # miss it while the controller changes screens. Keep the
+                        # last measured values and let the next full scan retry;
+                        # an absent optional menu must not fail basic telemetry.
+                        self.menu_errors['SHOWDATA']=str(exc)
+                        self.cts600.resetMenu()
+                    else:
+                        self.menu_errors.pop('SHOWDATA',None)
+                        self.cts600.data={key:value for key,value in self.cts600.data.items() if not (key.startswith('T') and key[1:].isdigit())}
+                        self.cts600.data.update(fresh)
+                        self._last_profile_poll = dt_util.utcnow().timestamp()
+                        for key in fresh:
+                            if key.startswith('T') and key[1:].isdigit():self.cts600.metaData[key]={'kind':'temperature'}
                 if time.monotonic() >= self._next_menu_scan:
                     path = USER_PATHS[self._menu_cursor % len(USER_PATHS)]
                     label = '/'.join(part[0] for part in path)
@@ -152,6 +163,11 @@ class CTS600Coordinator(DataUpdateCoordinator):
                     self._next_alarm_scan=time.monotonic()+60
             return self.cts600.data.copy()
 
+    def _tolerate_transport_failure(self):
+        """Use cached telemetry for only the first consecutive TCP failure."""
+        self._transient_failures += 1
+        return self._transient_failures == 1 and bool(self.data) and self.last_success is not None
+
     async def _async_update_data(self):
         async with self._lock:
             if self._closed:
@@ -165,7 +181,19 @@ class CTS600Coordinator(DataUpdateCoordinator):
                     self._next_scan = time.monotonic() + 60
                 self.last_success = dt_util.utcnow()
                 self.last_error = None
+                self._transient_failures = 0
                 return result
+            except (ConnectionError, TimeoutError, OSError) as exc:
+                self.last_error = str(exc)
+                self._initialized = False
+                await self.hass.async_add_executor_job(self.transport.close)
+                # A single broken TCP frame is common with serial gateways.
+                # Preserve the last known state for one 5 s cycle and reconnect
+                # on the next poll. Persistent failures still become UpdateFailed.
+                if self._tolerate_transport_failure():
+                    _LOGGER.debug('CTS600 transient transport failure; reconnecting on next poll: %s',exc)
+                    return self.data.copy()
+                raise UpdateFailed(str(exc)) from exc
             except Exception as exc:
                 self.last_error = str(exc)
                 self._initialized = False

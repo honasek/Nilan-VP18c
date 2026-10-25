@@ -15,11 +15,14 @@ from zoneinfo import ZoneInfo
 from .tuv_model import finite, soc, predict, CP_WH_L_K, CELL_L
 
 VERSION=1
+SIMULATION_VERSION=3
 MODES=('HOTWATER','HEATING','COOLING')
 STEP=5
 MAX_PROFILES=24
 GAP_S=300
 RETENTION_DAYS=45
+CANDIDATE_STEP_MIN=5
+PROFILE_DAYS=14
 
 
 def quantile(values, fraction):
@@ -96,6 +99,83 @@ def prior_rate(at,settings):
 
 def energy(temperatures):
     return sum(temperatures)*CELL_L*CP_WH_L_K
+
+
+def complete_day(row):
+    return (sum(row['minutes'])>=1080 and sum(row['minutes'][12:18])>=135
+            and sum(row['minutes'][36:46])>=225)
+
+
+@dataclass(frozen=True)
+class DemandProfile:
+    """One coherent local-day trajectory, repeated over the forecast horizon.
+
+    Litres are inferred by the observer, not metered. The stress factor scales
+    the entire day; peaks from unrelated days are never combined.
+    """
+    kind: str
+    source: str
+    bins: tuple[float, ...]
+    observed_day: str | None=None
+    factor: float=1.0
+
+    def rate(self, at, settings):
+        local=datetime.fromtimestamp(at,ZoneInfo(settings.timezone))
+        return self.bins[local.hour*2+local.minute//30]*self.factor/30
+
+    def public(self):
+        return {'kind':self.kind,'source':self.source,'observed_day':self.observed_day,
+                'factor':self.factor,'daily_tank_l_model':round(sum(self.bins)*self.factor,1),
+                'draw_is_measured':False}
+
+
+def demand_profiles(learner,settings,now,horizon):
+    """Median-like whole day and a high-demand whole day for this horizon.
+
+    Three distinct, sufficiently covered past days are required. Missing bins
+    are filled from the explicit prior; a covered zero stays zero. At most the
+    latest fourteen days participate, without changing persisted learning.
+    """
+    tz=ZoneInfo(settings.timezone)
+    today=datetime.fromtimestamp(now,tz).date()
+    prior=tuple(settings.prior_daily_l*(.4/6 if 12<=i<18 else .5/10 if 36<=i<46 else .1/32)
+                for i in range(48))
+    days=[]
+    for day,row in sorted(learner.days.items()):
+        if day>=today.isoformat() or (today-datetime.fromisoformat(day).date()).days>RETENTION_DAYS:
+            continue
+        if complete_day(row):
+            bins=tuple(row['litres'][i]*30/row['minutes'][i] if row['minutes'][i]>=20 else prior[i]
+                       for i in range(48))
+            days.append(DemandProfile('expected','observed_whole_day',bins,day))
+    days=days[-PROFILE_DAYS:]
+    if len(days)<3:
+        expected=DemandProfile('expected','explicit_prior',prior)
+        return expected,replace(expected,kind='stress',factor=1.2)
+    # Choose an actually observed median-volume day; L1 distance resolves ties.
+    # A pure shape medoid could prefer an unusually empty day when draw times
+    # vary. Pointwise medians/quantiles can invent a multi-peak household day.
+    typical_total=median(sum(p.bins) for p in days)
+    expected=min(days,key=lambda p:(abs(sum(p.bins)-typical_total),
+                                    sum(sum(abs(a-b) for a,b in zip(p.bins,q.bins)) for q in days),p.observed_day))
+    def horizon_draw(p):
+        total=0.;cursor=now
+        while cursor<horizon:
+            until=min((cursor//300+1)*300,horizon)
+            total+=p.rate((cursor+until)/2,settings)*(until-cursor)/60
+            cursor=until
+        return total
+    # Select one whole historical day, not a different maximum for each bin.
+    stress=max(days,key=lambda p:(horizon_draw(p),sum(p.bins),p.observed_day))
+    return expected,replace(stress,kind='stress',factor=1.2)
+
+
+def evaluation_horizon(now,window,settings):
+    """All candidates include the following morning/evening demand period."""
+    tz=ZoneInfo(settings.timezone)
+    day=datetime.fromtimestamp(window['end'],tz).date()
+    end=wall_timestamp(day,'09:00' if window['kind']=='night' else '23:00',tz)
+    return max(window['end'],end)
 
 
 class ShadowLearner:
@@ -210,18 +290,11 @@ class ShadowLearner:
         self.pending=self.pending[-48:]
 
     def demand(self,at,settings):
-        local=datetime.fromtimestamp(at,ZoneInfo(settings.timezone))
-        index=local.hour*2+local.minute//30
-        values=[row['litres'][index]*30/row['minutes'][index]
-                for day,row in self.days.items() if day<local.date().isoformat() and row['minutes'][index]>=20]
-        prior=prior_rate(at,settings)
-        # Distinct days, not repeated identical readings, provide evidence.
-        if len(values)>=3:return max(prior,quantile(values,.9)*1.2/30),'observed_model'
-        return prior,'prior'
+        expected,_=demand_profiles(self,settings,at,at+86400)
+        return expected.rate(at,settings),expected.source
 
     def summary(self):
-        complete=sum(sum(row['minutes'])>=1080 and sum(row['minutes'][12:18])>=135
-                     and sum(row['minutes'][36:46])>=225 for row in self.days.values())
+        complete=sum(complete_day(row) for row in self.days.values())
         periods={}
         for name,start,end in (('morning',12,18),('evening',36,46)):
             values=[sum(row['litres'][start:end]) for row in self.days.values()
@@ -310,101 +383,187 @@ def profiles(model):
     return [replace(rows[i],temperatures=rows[i].temperatures[:]) for i in sorted(indices)]
 
 
-def simulate(model,learner,settings,target,now,start,deadline,variant,price_start=None):
-    """Frozen initial state evolves independently through waiting, draws and heating.
+def simulate(model,learner,settings,target,now,start,deadline,variant,price_start=None,
+             *,demand_profile=None,horizon=None,thermostat=None):
+    """Evolve every path to the same fixed horizon, even after first reaching T12.
 
-    This simplified thermostat is a scenario assumption, not emulated firmware.
-    Heat needed for the currently observed house mode is never suppressed.
+    A conditional start is a scenario assumption, not an emulation of firmware.
+    Private path results permit paired comparisons without mismatching medians.
     """
     fan=model.fan_baselines.get(model.last.fan_key,{}).get('watts',60)
+    if not finite(target) or not 30<target<=60:raise ValueError('Stock reference must be above 30 °C')
+    thermostat=thermostat or {}
+    measured=thermostat.get('restart_drop_c')
+    drop=measured if finite(measured) and 0<measured<=10 else 3.0
+    bounds=thermostat.get('restart_range_c')
+    hold_floor=bounds[1] if bounds else target-drop
+    hysteresis_drop=(target-bounds[0] if bounds and demand_profile is not None and demand_profile.kind=='stress' else drop)
     house=model.last.compressor is True and model.last.mode in ('HEATING','COOLING')
     price_start=start if price_start is None else price_start
-    end=min(now+28*3600,deadline+4*3600)
+    end=deadline if horizon is None else max(deadline,horizon)
     rates=[];cursor=now
     while cursor<end:
-        until=min(cursor+STEP*60,end,start if cursor<start<cursor+STEP*60 else end,
-                  deadline if cursor<deadline<cursor+STEP*60 else end)
-        rate,source=learner.demand((cursor+until)/2,settings)
+        until=min((cursor//(STEP*60)+1)*STEP*60,end,
+                  start if cursor<start else end,deadline if cursor<deadline else end)
+        if demand_profile is None:
+            rate,source=learner.demand((cursor+until)/2,settings)
+        else:
+            rate,source=demand_profile.rate((cursor+until)/2,settings),demand_profile.source
         rates.append((cursor,until,rate,source));cursor=until
-    completions=[];minimums=[];tops=[];on_minutes=[];window_minutes=[];cancelled=[];deadline_temperatures=[]
+    paths=[]
     for p in profiles(model):
-        min_stock=soc(p.temperatures,p.temperatures[-1]);min_top=p.temperatures[-1]
+        initial=p.temperatures[:]
+        min_stock=soc(initial,initial[-1],target);min_top=initial[-1]
+        post_stock=post_top=float('inf')
         full=variant=='normal'
         wait_litres=sum(draw*max(0,min(last,start)-first)/60 for first,last,draw,_ in rates if first<start)
-        reserve_goal=min(100,settings.reserve_pct+5+wait_litres*max(0,target-p.inlet_c)/(180*30)*100)
+        reserve_goal=min(100,settings.reserve_pct+5+wait_litres*max(0,target-p.inlet_c)/(180*(target-30))*100)
         top_goal=min(target,settings.top_min_c+2)
         reserve_phase=variant=='partial' and (min_stock<reserve_goal or min_top<top_goal)
         water_on=model.last.compressor is True and model.last.mode=='HOTWATER'
-        completion=now if full and p.temperatures[0]>=target else None
-        total=cheap=0.0;cancel=None;deadline_bottom=None
+        initial_held=thermostat.get('reached_probes',{}).get('T12') is True and initial[0]>hold_floor
+        completion=now if initial[0]>=target or initial_held else None
+        cycle_reached=completion;deadline_cycle=None;deadline_ready=False
+        held_low=initial[0] if completion is not None else float('inf')
+        total=water_minutes=cheap=0.0;cancel=None;deadline_bottom=None
         for first,last,draw,_ in rates:
             dt=(last-first)/60
+            was_water_on=water_on
             if first>=start and not full:
                 full=True
-                # Conditional continuous compressor heating after the candidate
-                # start, not a promise that restoring a setpoint forces firmware.
-                water_on=p.temperatures[0]<target
-            if variant!='normal' and not full and not reserve_phase and (soc(p.temperatures,p.temperatures[-1])<settings.reserve_pct or p.temperatures[-1]<settings.top_min_c):
-                # Cancel once; never re-postpone this virtual heating cycle.
+                water_on=p.temperatures[0]<target and not (cycle_reached is not None and p.temperatures[0]>hold_floor)
+            if variant!='normal' and not full and not reserve_phase and (
+                    soc(p.temperatures,p.temperatures[-1],target)<settings.reserve_pct
+                    or p.temperatures[-1]<settings.top_min_c):
                 full=True;cancel=first
             desired=target if full else max(5,min(target,settings.top_min_c))
             if reserve_phase:
-                if soc(p.temperatures,p.temperatures[-1])>=reserve_goal and p.temperatures[-1]>=top_goal:
-                    reserve_phase=False;water_on=False
-                elif p.temperatures[0]>=target:
+                if ((soc(p.temperatures,p.temperatures[-1],target)>=reserve_goal and p.temperatures[-1]>=top_goal)
+                        or p.temperatures[0]>=target):
                     reserve_phase=False;water_on=False
                 else:water_on=True
             elif full:
                 if p.temperatures[0]>=desired:water_on=False
-                elif p.temperatures[0]<desired-3 or water_on:water_on=True
+                elif p.temperatures[0]<desired-hysteresis_drop or water_on:water_on=True
             else:water_on=False
+            if water_on and not was_water_on and p.temperatures[0]<target:cycle_reached=None
             heating=water_on or house
-            # Do not assume a switch to faster water-only heat at the expense
-            # of a currently observed heating/cooling requirement for the house.
             mode=model.last.mode if house else 'HOTWATER'
-            # An idle socket reading must never become a future compressor's input.
             virtual=replace(model.last,at=first,compressor=heating,auxiliary=False,mode=mode,
                             power_w=None,power_quality='assumed')
             p.temperatures=predict(p,virtual,dt,draw,fan,max_step=1.0)
-            if water_on:
+            if heating:
                 total+=dt
-                cheap+=max(0,min(last,deadline)-max(first,price_start))
-            if first<deadline:
-                min_stock=min(min_stock,soc(p.temperatures,p.temperatures[-1]));min_top=min(min_top,p.temperatures[-1])
-            if full and completion is None and p.temperatures[0]>=target:completion=last
-            if first<deadline<=last:deadline_bottom=p.temperatures[0]
-            if last>=deadline and completion is not None:break
-        completions.append(float('inf') if completion is None else completion)
-        minimums.append(min_stock);tops.append(min_top);on_minutes.append(total);window_minutes.append(cheap/60)
-        cancelled.append(cancel)
-        deadline_temperatures.append(float('-inf') if deadline_bottom is None else deadline_bottom)
-    upper=quantile(completions,.9)
-    # Include all selected profiles, including paths that never reached the target.
-    low=quantile(minimums,.1);top=quantile(tops,.1);deadline_bottom=quantile(deadline_temperatures,.1)
+                cheap+=max(0,min(last,deadline)-max(first,price_start))/60
+            if water_on:water_minutes+=dt
+            if p.temperatures[0]>=target:
+                if completion is None:completion=last
+                if cycle_reached is None:cycle_reached=last
+            elif p.temperatures[0]<=hold_floor:cycle_reached=None
+            if last<=deadline:
+                min_stock=min(min_stock,soc(p.temperatures,p.temperatures[-1],target))
+                min_top=min(min_top,p.temperatures[-1])
+                if completion is not None:held_low=min(held_low,p.temperatures[0])
+            if first<deadline<=last:
+                deadline_bottom=p.temperatures[0]
+                deadline_cycle=cycle_reached
+                deadline_ready=(deadline_bottom>=target-.5 or
+                                (cycle_reached is not None and not water_on and deadline_bottom>hold_floor))
+                post_stock=soc(p.temperatures,p.temperatures[-1],target);post_top=p.temperatures[-1]
+            if last>deadline:
+                post_stock=min(post_stock,soc(p.temperatures,p.temperatures[-1],target))
+                post_top=min(post_top,p.temperatures[-1])
+        paths.append({'completion':float('inf') if completion is None else completion,
+                      'held_low':held_low if completion is not None and completion<=deadline else float('-inf'),
+                      'min_stock':min_stock,'min_top':min_top,'post_stock':post_stock,'post_top':post_top,
+                      'deadline_bottom':deadline_bottom,'cancel':cancel,'electric_kwh':total*.45/60,
+                      'deadline_ready':deadline_ready,'deadline_cycle':float('inf') if deadline_cycle is None else deadline_cycle,
+                      'water_kwh':water_minutes*.45/60,'window_kwh':cheap*.45/60,
+                      'end':p.temperatures[:],'initial':initial,'inlet':p.inlet_c})
+    upper=quantile([p['completion'] for p in paths],.9)
+    low=quantile([p['min_stock'] for p in paths],.1);top=quantile([p['min_top'] for p in paths],.1)
+    bottom=quantile([p['deadline_bottom'] for p in paths],.1)
+    post_stock=quantile([p['post_stock'] for p in paths],.1);post_top=quantile([p['post_top'] for p in paths],.1)
+    held_low=quantile([p['held_low'] for p in paths],.1)
+    reached=finite(upper) and upper<=deadline
+    cycle_finish=quantile([p['deadline_cycle'] for p in paths],.9)
+    with_margin=finite(cycle_finish) and cycle_finish<=deadline-settings.margin_min*60
+    at_deadline=quantile([p['deadline_ready'] for p in paths],.1) is True
     return {'variant':variant,'start_at':stamp(start),'finish_at':stamp(upper),
             'finish_epoch':upper if finite(upper) else None,
+            'horizon_end':stamp(end),'target_reached_before_deadline':reached,
+            'target_reached_with_margin':with_margin,'ready_at_deadline':at_deadline,
+            'target_held_until_deadline':finite(held_low) and held_low>hold_floor,
+            'nominal_target_held_until_deadline':finite(held_low) and held_low>=target-.5,
+            'nominal_target_at_deadline':bottom>=target-.5,
+            'ready_cycle_finish_at':stamp(cycle_finish),
+            'hysteresis_drop_c':round(hysteresis_drop,2),'readiness_floor_c':round(hold_floor,2),
+            'stock_reference_c':target,
+            'holding_min_t12_c':round(held_low,1) if finite(held_low) else None,
             'min_reserve_pct':round(low,1),'min_top_c':round(top,1),
             'reserve_met':low>=settings.reserve_pct and top>=settings.top_min_c,
-            # T11/T12 report whole degrees. Allow half a degree for model floats,
-            # but do not call an early crossing a success after a later draw.
-            'deadline_met':finite(upper) and upper<=deadline-settings.margin_min*60 and deadline_bottom>=target-.5,
-            'deadline_t12_c':round(deadline_bottom,1) if finite(deadline_bottom) else None,
-            'target_tolerance_c':.5,
-            'cancelled_paths':sum(x is not None for x in cancelled),
-            'reaching_paths':sum(finite(x) for x in completions),'profiles':len(completions),
-            'compressor_electric_kwh_model':round(median(on_minutes)*.45/60,3),
-            'window_electric_kwh_model':round(median(window_minutes)*.45/60,3),
-            'saving_czk':None,'energy_scope':'Modelový příkon požadavku TUV 450 W; bez ocenění a bez alokace souběhu pro dům'}
+            'deadline_met':with_margin and at_deadline,'deadline_t12_c':round(bottom,1),
+            'post_use_comfort_met':post_stock>=settings.reserve_pct and post_top>=settings.top_min_c,
+            'post_use_min_reserve_pct':round(post_stock,1),'post_use_min_top_c':round(post_top,1),
+            'target_tolerance_c':.5,'cancelled_paths':sum(p['cancel'] is not None for p in paths),
+            'reaching_paths':sum(finite(p['completion']) for p in paths),'profiles':len(paths),
+            'compressor_electric_kwh_model':round(median(p['electric_kwh'] for p in paths),3),
+            'dhw_request_electric_kwh_model':round(median(p['water_kwh'] for p in paths),3),
+            'window_electric_kwh_model':round(median(p['window_kwh'] for p in paths),3),
+            'end_tank_heat_kwh_model':round(median((energy(p['end'])-6*CELL_L*CP_WH_L_K*p['inlet'])/1000 for p in paths),3),
+            'end_stock_pct':round(median(soc(p['end'],p['end'][-1],target) for p in paths),1),
+            'end_layers_c':[round(median(p['end'][i] for p in paths),1) for i in range(6)],
+            'saving_czk':None,
+            'energy_scope':'Celý modelový kompresor 450 W ve společném horizontu; koncový stav se porovnává zvlášť',
+            '_paths':paths}
+
+
+def compare_energy(row,normal):
+    """Do not credit an emptier/cooler tank as an electrical saving.
+
+    Compare matching thermal paths, not unrelated medians. There is no trusted
+    COP for converting an inventory deficit into a claimed future electricity
+    cost, so differing end states are explicitly ineligible for savings.
+    """
+    pairs=list(zip(row['_paths'],normal['_paths']))
+    heat=[(energy(a['end'])-energy(b['end']))/1000 for a,b in pairs]
+    electrical=[a['electric_kwh']-b['electric_kwh'] for a,b in pairs]
+    equivalent=all(abs(h)<=.05 and max(abs(x-y) for x,y in zip(a['end'],b['end']))<=.5
+                   for (a,b),h in zip(pairs,heat))
+    service=all(r['deadline_met'] and r['reserve_met'] and r['post_use_comfort_met'] for r in (row,normal))
+    same_horizon=row['horizon_end']==normal['horizon_end']
+    comparable=equivalent and service and same_horizon
+    return {'same_horizon':same_horizon,'terminal_state_equivalent':equivalent,
+            'service_comparable':service,'saving_comparable':comparable,
+            'compressor_delta_kwh':round(median(electrical),3),
+            'end_tank_heat_delta_kwh':round(median(heat),3),
+            'saving_electric_kwh_model':round(-median(electrical),3) if comparable else None,
+            'reason':'comparable' if comparable else 'different_terminal_state' if not equivalent else 'service_not_met'}
+
+
+def public_scenario(row):
+    return {key:value for key,value in row.items() if not key.startswith('_')}
 
 
 def empty_plan(now,reason,status='cannot_evaluate'):
     return {'issued_at':stamp(now),'issued_epoch':now,'status':status,'reason':reason,
-            'shadow_only':True,'validated_for_control':False,'selected_variant':None,
-            'window_start':None,'deadline':None,'latest_start':None,'finish_at':None,
+            'simulation_version':SIMULATION_VERSION,'shadow_only':True,'validated_for_control':False,
+            'selected_variant':None,'window_start':None,'deadline':None,'latest_start':None,'finish_at':None,
             'expected_reserve_pct':None,'scenarios':[],'saving_czk':None}
 
 
-def make_plan(model,learner,settings,target,now):
+def candidate_times(now,start,deadline,margin):
+    """Scan the whole feasible window; feasibility need not be monotonic."""
+    first=max(now,start);last=deadline-margin*60
+    if last<first:return []
+    rows={first,last}
+    cursor=(int(first//(CANDIDATE_STEP_MIN*60))+1)*CANDIDATE_STEP_MIN*60
+    while cursor<last:
+        rows.add(cursor);cursor+=CANDIDATE_STEP_MIN*60
+    return sorted(rows)
+
+
+def make_plan(model,learner,settings,target,now,*,thermostat=None):
     try:settings.validate()
     except (ValueError,TypeError,KeyError) as exc:return empty_plan(now,str(exc))
     if not settings.enabled:return empty_plan(now,'Shadow výpočet je vypnutý','disabled')
@@ -412,65 +571,96 @@ def make_plan(model,learner,settings,target,now):
     if s is None or not model.particles or not s.valid() or not -5<=now-s.at<=GAP_S:
         return empty_plan(now,'Čekám na čerstvý úplný odečet T11/T12')
     if not finite(target) or not 5<=target<=60:return empty_plan(now,'Chybí platný aktuální cíl TUV')
+    if target<=30:return empty_plan(now,'Pro model zásoby je nutný cíl kompresoru nad 30 °C')
     if s.auxiliary is True:return empty_plan(now,'Běží spirála; kompresorový scénář nelze oddělit','auxiliary_active')
     if s.auxiliary is None or s.compressor is None:return empty_plan(now,'Chybí potvrzený stav kompresoru nebo spirály')
     if s.mode not in MODES or model.phase in ('gap','mismatch','initializing'):
         return empty_plan(now,'Čekám na stabilní známý provozní režim')
     window=next_window(now,settings)
     start=max(now,window['start']);deadline=window['end']
-    normal=simulate(model,learner,settings,target,now,now,deadline,'normal',window['start'])
-    full=simulate(model,learner,settings,target,now,start,deadline,'full_delay',window['start'])
-    partial=simulate(model,learner,settings,target,now,start,deadline,'partial',window['start'])
-    scenarios=[normal,full,partial]
-    selected=None
-    for row in (full,partial):
-        if row['reserve_met'] and row['deadline_met'] and row['cancelled_paths']==0:selected=row;break
-    latest=None
-    if selected is not None:
-        # Bounded search: report only a fully simulated passing start, rounded
-        # conservatively to five minutes; unresolved later starts are not advertised.
-        lo=start;hi=deadline-settings.margin_min*60
-        for _ in range(3):
-            middle=int(((lo+hi)/2)//300)*300
-            if middle<=lo or middle>=hi:break
-            candidate=simulate(model,learner,settings,target,now,middle,deadline,selected['variant'],window['start'])
-            if candidate['reserve_met'] and candidate['deadline_met'] and candidate['cancelled_paths']==0:
-                lo=middle;selected=candidate
-            else:hi=middle
-        latest=selected['start_at']
-        scenarios.append({**selected,'latest_start_candidate':True})
-    elif normal['finish_epoch'] is not None:
-        # Earlier candidate includes simulated waiting losses and draws when verified.
+    horizon=evaluation_horizon(now,window,settings)
+    expected,stress=demand_profiles(learner,settings,now,horizon)
+    cache={}
+    def run(variant,at,profile):
+        key=(variant,at,profile.kind)
+        if key not in cache:
+            cache[key]=simulate(model,learner,settings,target,now,at,deadline,variant,window['start'],
+                                demand_profile=profile,horizon=horizon,thermostat=thermostat)
+        return cache[key]
+    normal=run('normal',now,expected);stress_normal=run('normal',now,stress)
+    def feasible(row):
+        return (row['reserve_met'] and row['deadline_met'] and row['post_use_comfort_met']
+                and row['cancelled_paths']==0)
+    def passing(variant,at):
+        return feasible(run(variant,at,expected)) and feasible(run(variant,at,stress))
+    def combined(variant,at):
+        a=run(variant,at,expected);b=run(variant,at,stress)
+        ea=public_scenario(a);eb=public_scenario(b)
+        ea['energy_comparison']=compare_energy(a,normal)
+        eb['energy_comparison']=compare_energy(b,stress_normal)
+        # Existing consumers receive conservative guard booleans; detailed
+        # expected/stress readings remain separate and clearly labelled.
+        return {**ea,'expected':ea,'stress':eb,
+                'reserve_met':a['reserve_met'] and b['reserve_met'],
+                'deadline_met':a['deadline_met'] and b['deadline_met'],
+                'post_use_comfort_met':a['post_use_comfort_met'] and b['post_use_comfort_met'],
+                'cancelled_paths':a['cancelled_paths']+b['cancelled_paths'],
+                'expected_profile_passes':feasible(a),'stress_profile_passes':feasible(b),
+                'eligible':feasible(a) and feasible(b)}
+    times=candidate_times(now,window['start'],deadline,settings.margin_min)
+    selected_variant=None;selected_at=None;evaluations=[]
+    # A failed early start is not evidence that all later starts fail: the tank
+    # may cool after an early crossing, but retain heat after a later crossing.
+    for variant in ('full_delay','partial'):
+        accepted=[]
+        for at in times:
+            ok=passing(variant,at)
+            evaluations.append({'variant':variant,'start_at':stamp(at),'passes':ok})
+            if ok:accepted.append(at)
+        if accepted:
+            selected_variant=variant;selected_at=max(accepted)
+            break
+    if selected_variant is None and start>now+60 and normal['finish_epoch'] is not None:
+        full=run('full_delay',start,expected)
         over=max(0,(full['finish_epoch'] or deadline+86400)-deadline+settings.margin_min*60)
-        candidate=max(now,start-over)
-        if now+60<candidate<start:
-            earlier=simulate(model,learner,settings,target,now,candidate,deadline,'earlier',window['start'])
-            scenarios.append(earlier)
-            if earlier['reserve_met'] and earlier['deadline_met'] and earlier['cancelled_paths']==0:
-                selected=earlier;latest=earlier['start_at']
-    summary=learner.summary()
-    enough=summary['learning_ready']
-    if selected:
-        status={'full_delay':'would_delay','partial':'would_top_up','earlier':'would_start_earlier'}[selected['variant']]
-        reason={'full_delay':'Model připouští odklad zbývajícího ohřevu',
-                'partial':'Model vyžaduje doplnění rezervy nyní a pozdější dokončení',
-                'earlier':'Pro dokončení je nutné začít před levným oknem'}[selected['variant']]
+        earlier=max(now,start-over)
+        if now+60<earlier<start and passing('earlier',earlier):
+            selected_variant='earlier';selected_at=earlier
+            evaluations.append({'variant':'earlier','start_at':stamp(earlier),'passes':True})
+    # Diagnose representative candidates as well as the earliest start.
+    scenarios=[combined('normal',now),combined('full_delay',start),combined('partial',start)]
+    if selected_variant is not None:
+        selected=combined(selected_variant,selected_at)
+        scenarios.append({**selected,'latest_start_candidate':True})
+        status={'full_delay':'would_delay','partial':'would_top_up','earlier':'would_start_earlier'}[selected_variant]
+        reason=('Odklad splňuje termín i následný komfort v běžném a zátěžovém průběhu'
+                if selected_variant=='full_delay' else 'Pro dokončení je nutné začít před oknem'
+                if selected_variant=='earlier' else 'Model vyžaduje doplnění rezervy před odkladem')
     else:
-        selected=normal;status='would_not_delay'
-        reason='Odklad nesplnil modelovou rezervu nebo čas; běžný ohřev má přednost'
-    if not enough:
+        selected=scenarios[0];status='would_not_delay'
+        reason='Žádný prověřený start nesplnil rezervu, připravenost v termínu a následný komfort'
+    summary=learner.summary()
+    if not summary['learning_ready']:
         status='collecting';reason='Sbírám celé dny a průběhy dohřevu; doporučení odkladu zatím není ověřené'
     return {'issued_at':stamp(now),'issued_epoch':now,'status':status,'reason':reason,
-            'shadow_only':True,'validated_for_control':False,'selected_variant':selected['variant'],
-            'window_kind':window['kind'],'window_start':stamp(window['start']),'deadline':stamp(deadline),
-            'latest_start':latest,'latest_start_is_tested_candidate':True,
-            'finish_at':selected['finish_at'],'expected_reserve_pct':selected['min_reserve_pct'],
+            'simulation_version':SIMULATION_VERSION,'shadow_only':True,'validated_for_control':False,
+            'selected_variant':selected['variant'],'window_kind':window['kind'],
+            'window_start':stamp(window['start']),'deadline':stamp(deadline),
+            'horizon_end':stamp(horizon),'post_use_period':'morning' if window['kind']=='night' else 'evening',
+            'latest_start':stamp(selected_at),'latest_start_is_tested_candidate':True,
+            'finish_at':selected['finish_at'],'expected_reserve_pct':selected['expected']['min_reserve_pct'],
             'target_c':target,'target_probe':'T12','settings':asdict(settings),'scenarios':scenarios,
+            'stock_reference_c':target,'thermostat':thermostat,
+            'demand_profiles':[p.public() for p in (expected,stress)],
+            'candidate_step_min':CANDIDATE_STEP_MIN,'candidate_evaluations':evaluations,
             'initial_sample':asdict(s),'observer_samples':model.samples,'thermal_model_version':2,
             'initial_profiles':[asdict(p) for p in profiles(model)],
-            'forecast_demand':[{'at':stamp(at),'tank_l_min':learner.demand(at,settings)[0],
-                                'source':learner.demand(at,settings)[1]}
-                               for at in range(int(now),int(min(now+28*3600,deadline+4*3600))+1,1800)],
-            'learning':summary,'saving_czk':None,'demand_source':'Modelově odhadnuté odběry; pro chybějící půlhodiny explicitní denní předpoklad',
-            'assumptions':'Podmíněný souvislý ohřev po startu, následná hystereze 3 °C, kompresor 450 W, zachovaný současný požadavek domu; spuštění firmwarem ani komfort nejsou zaručené',
+            'forecast_demand':[{'at':stamp(at),'tank_l_min':expected.rate(at,settings),
+                                'stress_tank_l_min':stress.rate(at,settings),'source':expected.source}
+                               for at in range(int(now),int(horizon)+1,1800)],
+            'frozen_demand_profiles':[asdict(p) for p in (expected,stress)],
+            'learning':summary,'saving_czk':None,
+            'demand_source':'Souvislý typický den a zátěžový den × 1,2; při nedostatku dnů explicitní předpoklad',
+            'assumptions':('Podmíněný start, pozorovaná hystereze a její nejistota; při nedostatku dat předpoklad 3 °C. '
+                           'Příkon 450 W; zachován současný požadavek domu. Ráno do 09:00, večer do 23:00; bez záruky spuštění firmwarem či komfortu'),
             'distribution_is_calibrated':False}

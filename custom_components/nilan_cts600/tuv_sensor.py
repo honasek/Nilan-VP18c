@@ -55,7 +55,9 @@ class TUVSensor(CoordinatorEntity,SensorEntity):
             return bool((self.coordinator.data or {}).get('valid')) and self.native_value is not None
         if self.key in ('full_heat_remaining','minimum_heat_remaining'):
             data=self.coordinator.data or {}
-            return bool(data.get('valid')) and data.get(self.key,{}).get('status') in ('forecast','reached')
+            return bool(data.get('valid')) and data.get(self.key,{}).get('status') in ('forecast','reached','reached_hysteresis')
+        if self.key in ('soc','soc_minimum','soc_maximum'):
+            return bool((self.coordinator.data or {}).get('valid')) and (self.coordinator.data or {}).get('stock_reference_valid',True)
         return True if self.key=='model' else bool((self.coordinator.data or {}).get('valid'))
 
     @property

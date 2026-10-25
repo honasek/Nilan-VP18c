@@ -17,7 +17,7 @@ def blank(target,status,reason):
                      'reached_fraction':None} for key,(probe,_,_) in KEYS.items()}}
 
 
-def forecast(model,target,*,context_changed=False):
+def forecast(model,target,*,context_changed=False,thermostat=None):
     """Compute both user-defined endpoints together, preserving observer state.
 
     Full = upper T11, minimum = lower T12, both at the compressor setpoint.
@@ -32,6 +32,16 @@ def forecast(model,target,*,context_changed=False):
     for key,(_,attribute,_) in KEYS.items():
         if getattr(sample,attribute)>=target:
             result[key].update(minutes=0,status='reached',reason=None,lower_minutes=0,upper_minutes=0,reached_fraction=1.0)
+        elif (not context_changed and thermostat is not None
+              and thermostat.get('target_c')==target and thermostat.get('last_sample')==sample.at
+              and thermostat.get('reached_probes',{}).get(KEYS[key][0]) is True
+              and sample.auxiliary is False and sample.compressor is not None
+              and not (sample.compressor is True and sample.mode=='HOTWATER')
+              and sample.mode in ('HOTWATER','HEATING','COOLING')):
+            reason=('Dosaženo; teplota je v pozorovaném pásmu hystereze'
+                    if thermostat.get('restart_drop_c') is not None else 'Dosaženo; po dokončení pozorován pokles o 1 °C, hystereze se měří')
+            result[key].update(minutes=0,status='reached_hysteresis',reason=reason,
+                               lower_minutes=0,upper_minutes=0,reached_fraction=None)
         else:pending.append(key)
     if not pending:return result
     reason=None

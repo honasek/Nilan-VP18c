@@ -31,10 +31,11 @@ def clamp(value, low, high):
     return max(low, min(high, value))
 
 
-def soc(temperatures, top):
+def soc(temperatures, top, reference_c=FULL_C):
+    if not finite(reference_c) or not EMPTY_C<reference_c<=95:return None
     if top <= EMPTY_C:
         return 0.0
-    return clamp(100 * sum(max(t - EMPTY_C, 0) for t in temperatures) / (LAYERS * (FULL_C - EMPTY_C)), 0, 100)
+    return clamp(100 * sum(max(t - EMPTY_C, 0) for t in temperatures) / (LAYERS * (reference_c - EMPTY_C)), 0, 100)
 
 
 def mix_unstable(temperatures):
@@ -349,9 +350,10 @@ class ThermalObserver:
             self.last_snapshot['stock_trend']=self.stock_trend
         return self.last_snapshot
 
-    def snapshot(self):
+    def snapshot(self,reference_c=FULL_C):
         if not self.particles or self.last is None:return None
-        values=sorted(soc(p.temperatures,self.last.top) for p in self.particles)
+        reference_valid=finite(reference_c) and EMPTY_C<reference_c<=95
+        values=sorted(soc(p.temperatures,self.last.top,reference_c if reference_valid else FULL_C) for p in self.particles)
         value=median(values)
         p10,p90=values[int(.1*(COUNT-1))],values[int(.9*(COUNT-1))]
         stratified=self.last.top-self.last.bottom > 8
@@ -365,11 +367,13 @@ class ThermalObserver:
         if self.last.top <= EMPTY_C:value=low=high=0
         layers=[round(median(p.temperatures[i] for p in self.particles),1) for i in range(LAYERS)]
         # Use one actual ensemble member for the representative physical profile.
-        representative=min(self.particles,key=lambda p:abs(soc(p.temperatures,self.last.top)-value))
+        physical_median=median(sum(max(t-EMPTY_C,0) for t in p.temperatures) for p in self.particles)
+        representative=min(self.particles,key=lambda p:abs(sum(max(t-EMPTY_C,0) for t in p.temperatures)-physical_median))
         mature=(self.samples >= 1440 and self.draw_events >= 5 and self.heating_minutes >= 180 and self.calm_minutes >= 120
                 and self.learning['HOTWATER']['minutes']>=60 and self.learning['HOTWATER']['updates']>=3 and self.loss_updates>=1)
         return {
-            "soc":round(value),"lower":int(low),"upper":ceil(high),
+            "soc":round(value) if reference_valid else None,
+            "lower":int(low) if reference_valid else None,"upper":ceil(high) if reference_valid else None,
             "quality":"limited" if mature else "learning",
             "phase":self.phase,"layers_bottom_to_top":[round(t,1) for t in representative.temperatures],
             "layer_medians":layers,"last_sample":self.last.at,"samples":self.samples,
@@ -392,7 +396,9 @@ class ThermalObserver:
             "parameter_families":len(set((p.mixing,p.inlet_c,p.coil_shape) for p in self.particles)),
             "legacy_adaptations":self.legacy_adaptations,"migrated_from":self.migrated_from,
             "signals_missing":self.last.compressor is None or self.last.auxiliary is None,
-            "cold_water_range_c":[7,15],"empty_c":EMPTY_C,"full_c":FULL_C,"tank_l":TANK_L,
+            "cold_water_range_c":[7,15],"empty_c":EMPTY_C,"full_c":reference_c if reference_valid else None,"tank_l":TANK_L,
+            "stock_reference_valid":reference_valid,
+            "stock_reference_reason":None if reference_valid else 'Pro zásobu tepla je nutný platný cíl kompresoru nad 30 °C',
             "calibrated_by_measured_draw":False,"interval_is_calibrated_confidence":False,
             "sensor_positions_verified":False,
         }

@@ -146,6 +146,8 @@ The model and simulation may use helpers and measurement entities from a particu
 
 ## Development and validation
 
+The DHW shadow planner compares expected and stress **whole-day** demand patterns, checks a common horizon including subsequent morning/evening use, and compares the remaining tank state alongside electricity. See [DHW shadow simulation](docs/dhw-shadow.md) for candidate search, readiness/holding/comfort criteria, energy comparison rules and model limitations.
+
 The repository follows the HACS **Integration** directory layout:
 
 ```text
@@ -189,3 +191,9 @@ Every push and pull request runs the official **HACS Action**, **Home Assistant 
 Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).
 
 The original **Unlicense** is preserved in [LICENSE](LICENSE). The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for attribution and background. Its instructions describe the original variant; use the instructions above for this TCP variant.
+
+### Thermal reserve reference and thermostat evidence
+
+Public DHW reserve uses the active compressor setpoint: 100% represents the 180 l tank at that setpoint, 0% remains T11 at or below 30 °C. A missing setpoint or a setpoint at/below 30 °C makes reserve unavailable. Physical learning remains independent of this display reference.
+
+A passive observer measures clean starts and stops from retained actual samples. It reports approximate hysteresis, source setpoint, uncertainty and direct evidence counts. Until three starts and three stops at the active target exist, a mature cohort may be explicitly transferred from another target; contradictory observations disable that transfer. A completed cycle can remain reached after cooling inside the supported band. Compressor-off alone never establishes completion. Shadow simulations use the same reference/band; none of this turns on live control.
