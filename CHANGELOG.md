@@ -1,16 +1,38 @@
 # Changelog
 
+## 2026.10.25.1
+
+- Normalize public thermal reserve against the current compressor DHW setpoint above 30 °C; refresh immediately on setpoint changes while preserving physical profiles and learned parameters.
+- Passively observe clean compressor starts/stops, exclude rapid draw crossings, gaps, target changes and controlled leases, and persist thermostat evidence separately from physical learning. Bootstrap from actual retained samples.
+- Report measured or explicitly transferred hysteresis with integer-probe uncertainty and per-target evidence counts. A confirmed completed cycle remains reached while cooling within the supported band; compressor-off alone does not imply completion.
+- Apply the same reference and observed hysteresis to shadow readiness, reserve and expected/stress scenarios; retain common horizons and whole-window candidate search.
+- Show the active reference and passive hysteresis evidence on the existing DHW model dashboard. Add device-free regression coverage; no new entities or Recorder changes.
+
 ## 2026.10.25.0
 
 - Ship translations/en.json with the full contents of strings.json so users without a dedicated translation receive English titles, field labels and error messages.
 - Validate that the English runtime translation exists and matches strings.json before publishing a release.
 - Address the English fallback review feedback in hacs/default#12584. No device-control behavior changes.
 
+## 2026.10.24.1
+
+- Evaluate every scenario through one common horizon, including demand after the readiness deadline: through 09:00 for the night window and 23:00 for the daytime window, or the deadline if later.
+- Compare paired terminal tank energy and stratification alongside compressor electricity. Suppress savings when terminal states or delivered service are not comparable.
+- Separate a representative whole historical day from a coherent high-demand day scaled by 1.2. Stop stacking unrelated half-hour peaks; retain the explicit daily prior for insufficient history and uncovered bins.
+- Scan the entire candidate window every five minutes even when the earliest start fails. Distinguish first target crossing, deadline readiness, continuous holding and subsequent comfort.
+- Require both demand profiles and post-deadline comfort for new live-control plans. Preserve learned stores, permissions, default-off controls and existing entity IDs.
+- Add portable regression tests, including a real thermal case where an early start fails but a later start succeeds. Validate the adapter and scheduler against HA Core 2026.10.3.
+
 ## 2026.10.24.0
 
 - License the repository and installed integration under the standard MIT License, permitting commercial use and redistribution.
 - Preserve frodef's original public-domain Unlicense and attribution in the repository and HACS-installed integration.
 - Clarify the licensing terms in the README. No device-control behavior changes in this update.
+
+## 2026.10.23.1
+
+- Preserve the deployed polling resilience: an unavailable optional SHOW DATA menu does not invalidate the basic poll; its error remains visible.
+- Retain cached telemetry for only the first consecutive transport failure and reconnect on the next poll. Persistent failures still become unavailable.
 
 ## 2026.10.21.2
 

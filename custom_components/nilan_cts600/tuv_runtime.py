@@ -19,8 +19,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .panel_indicators import indicators
 from .tuv_model import ThermalObserver, Sample, finite
 from .tuv_power import PowerTracker
+from .tuv_thermostat import ThermostatObserver,bootstrap as bootstrap_thermostat
 from .tuv_eta import forecast,blank
-from .tuv_shadow import ShadowLearner,Settings,make_plan,empty_plan,stamp
+from .tuv_shadow import ShadowLearner,Settings,make_plan,empty_plan,stamp,SIMULATION_VERSION
 from dataclasses import asdict
 from statistics import median
 
@@ -58,6 +59,8 @@ class TUVRuntime(DataUpdateCoordinator):
         self.io_error=None
         self.model_error=None
         self.power_tracker=PowerTracker()
+        self.thermostat=ThermostatObserver()
+        self.thermostat_warning=None
         self._eta_key=None
         self.shadow=ShadowLearner()
         self.shadow_store=Store(hass,1,f'nilan_cts600.{main.entry.entry_id}.tuv_shadow')
@@ -69,6 +72,7 @@ class TUVRuntime(DataUpdateCoordinator):
         self.shadow_error=None
 
     async def async_start(self):
+        stored=None
         try:
             stored=await self.store.async_load()
             if all(self.identity.values()) and isinstance(stored,dict) and stored.get('identity')==self.identity:
@@ -96,6 +100,16 @@ class TUVRuntime(DataUpdateCoordinator):
             self.shadow=ShadowLearner()
             self.shadow_error='Uložené učení shadow nelze obnovit; sběr začíná znovu'
             _LOGGER.warning('TUV shadow: neplatné uložené učení; skutečný model zůstává zachován',exc_info=True)
+        try:
+            if isinstance(stored,dict) and stored.get('identity')==self.identity and stored.get('thermostat') is not None:
+                self.thermostat=ThermostatObserver.restore(stored['thermostat'],time.time())
+            else:
+                cutoff=self.model.last.at if self.model.last else time.time()
+                self.thermostat=await self.hass.async_add_executor_job(bootstrap_thermostat,self.shadow_archive,cutoff)
+        except Exception:
+            self.thermostat=ThermostatObserver()
+            self.thermostat_warning='Měření hystereze se obnovuje; tepelný model a jeho učení zůstávají zachovány'
+            _LOGGER.warning('TUV: hysterezi nelze obnovit; pokračuje pasivní měření',exc_info=True)
         self._unsub.append(self.main.async_add_listener(self._schedule))
         self._unsub.append(async_track_time_interval(self.hass,self._timer,timedelta(seconds=60)))
         self._unsub.append(async_track_state_change_event(self.hass,[*SHADOW_HELPERS.values(),SHADOW_INITIALIZED],self._shadow_changed))
@@ -210,10 +224,14 @@ class TUVRuntime(DataUpdateCoordinator):
     def _forecast_sync(self,key):
         last=self.model.last
         changed=last is not None and key[2:]!=(last.compressor,last.auxiliary,last.mode,last.fan_key)
-        try:return forecast(self.model,key[1],context_changed=changed)
+        thermostat=self.thermostat.snapshot(key[1])
+        projection=self.model.snapshot(key[1]) or {}
+        try:return {**projection,**forecast(self.model,key[1],context_changed=changed,thermostat=thermostat),
+                    'thermostat':thermostat,'thermostat_warning':self.thermostat_warning}
         except Exception:
             _LOGGER.warning('TUV: čas do ohřevu nelze spočítat; odhad zásoby pokračuje',exc_info=True)
-            return blank(key[1],'forecast_error','Čas do ohřevu není právě dostupný')
+            return {**projection,**blank(key[1],'forecast_error','Čas do ohřevu není právě dostupný'),
+                    'thermostat':thermostat,'thermostat_warning':self.thermostat_warning}
 
     async def _refresh_eta(self):
         valid,reason=self._validity()
@@ -252,11 +270,13 @@ class TUVRuntime(DataUpdateCoordinator):
                 if error is not None:plan=empty_plan(time.time(),error,'waiting')
                 elif result.get('eta_assumption') is not None and any(result.get(k,{}).get('status')=='context_changed' for k in ('minimum_heat_remaining','full_heat_remaining')):
                     plan=empty_plan(time.time(),'Čekám na úplný odečet po změně provozu','waiting')
-                else:plan=make_plan(self.model,self.shadow,settings,result.get('eta_target_c'),time.time())
+                else:plan=make_plan(self.model,self.shadow,settings,result.get('eta_target_c'),time.time(),
+                                    thermostat=result.get('thermostat'))
                 self._shadow_plan=plan;self._shadow_key=signature
                 record=deepcopy(plan)
             self._cached_shadow_dump={'identity':self.identity,'learner':self.shadow.dump()}
-            public={key:value for key,value in self._shadow_plan.items() if key not in ('initial_profiles','forecast_demand')}
+            public={key:value for key,value in self._shadow_plan.items()
+                    if key not in ('initial_profiles','forecast_demand','frozen_demand_profiles')}
             public['learning']=self.shadow.summary()
             public['io_error']=self.shadow_io_error
             public['restore_warning']=self.shadow_error
@@ -270,6 +290,8 @@ class TUVRuntime(DataUpdateCoordinator):
         result=self.model.step(sample)
         record=None
         if result is not None:
+            live=getattr(self.main,'_tuv_live_runtime',None)
+            self.thermostat.observe(sample,key[1],inhibited=bool(live and live.control.lease))
             result={**result,**self._forecast_sync(key)}
             result['shadow'],record=self._shadow_sync(settings,error,result,True)
         return result,self.model.dump(),record
@@ -288,7 +310,8 @@ class TUVRuntime(DataUpdateCoordinator):
             if result is None:return
             self.model_error=None
             self._eta_key=key
-            self._cached_dump={'identity':self.identity,'model':dump,'power_context':self.power_tracker.dump()}
+            self._cached_dump={'identity':self.identity,'model':dump,'power_context':self.power_tracker.dump(),
+                               'thermostat':self.thermostat.dump()}
             try:
                 await self.hass.async_add_executor_job(self._archive_sync,sample,result)
                 self.io_error=None
@@ -337,9 +360,12 @@ class TUVRuntime(DataUpdateCoordinator):
             append('samples-'+day.isoformat()+'.jsonl',{
                 'sample':asdict(sample),'target_c':result.get('eta_target_c'),
                 'soc':result['soc'],'lower':result['lower'],'upper':result['upper'],
+                'stock_reference_c':result.get('full_c'),
+                'thermostat_inhibited':bool(getattr(getattr(self.main,'_tuv_live_runtime',None),'control',None)
+                                           and self.main._tuv_live_runtime.control.lease),
                 'draw_l_min_model':median(p.draw_l_min for p in self.model.particles) if self.model.active_draw else 0,
                 'draw_probability_model':self.model.draw_probability,'drawing_model':self.model.active_draw,
-                'plan_issued_at':result.get('shadow',{}).get('issued_at'),'shadow_version':1})
+                'plan_issued_at':result.get('shadow',{}).get('issued_at'),'shadow_version':SIMULATION_VERSION})
         if record is not None:
             append('plans-'+day.isoformat()+'.jsonl',record)
             summary={'as_of':stamp(at),'learning':self.shadow.summary(),'days':deepcopy(self.shadow.days)}
@@ -361,6 +387,7 @@ class TUVRuntime(DataUpdateCoordinator):
         target=self.archive/(day.isoformat()+'.jsonl')
         record={'sample':{key:getattr(sample,key) for key in sample.__dataclass_fields__},
                 'soc':result['soc'],'lower':result['lower'],'upper':result['upper'],'phase':result['phase'],
+                'stock_reference_c':result.get('full_c'),
                 'eta':{'target_c':result.get('eta_target_c'),
                        'full':result.get('full_heat_remaining'),'minimum':result.get('minimum_heat_remaining')}}
         with target.open('a',encoding='utf-8') as stream:stream.write(json.dumps(record,allow_nan=False,separators=(',',':'))+'\n')

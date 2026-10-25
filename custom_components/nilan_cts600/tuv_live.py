@@ -58,7 +58,11 @@ def candidate(context, now):
     rows = [r for r in plan.get('scenarios', [])
             if r.get('variant') == 'full_delay' and epoch(r.get('start_at')) == start]
     if not any(r.get('reserve_met') is True and r.get('deadline_met') is True
-               and r.get('cancelled_paths') == 0 for r in rows):
+               and r.get('cancelled_paths') == 0
+               and (plan.get('simulation_version',1)<2
+                    or (r.get('post_use_comfort_met') is True
+                        and r.get('expected_profile_passes') is True
+                        and r.get('stress_profile_passes') is True)) for r in rows):
         return None, 'scenario_not_verified'
     return {'target': target, 'applied': 5, 'release_at': start, 'deadline': deadline,
             'reserve_pct': reserve, 'top_min_c': top}, 'eligible'
