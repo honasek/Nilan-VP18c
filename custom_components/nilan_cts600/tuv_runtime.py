@@ -200,10 +200,9 @@ class TUVRuntime(DataUpdateCoordinator):
         gap=self.model.last is not None and at-self.model.last.at>300
         self.power_tracker.observe((flags['compressor_running'],flags['dhw_aux_running'],mode,fan_key),at,gap=gap)
         power=self._power(at)
-        ambient=self.hass.states.get('sensor.nilan_t15')
         try:
-            room=float(ambient.state)
-            if ambient.attributes.get('restored') or ambient.attributes.get('unit_of_measurement')!='°C' or not finite(room) or not 0<=room<=40:room=20.0
+            reading=self.main.t15_reading()
+            room=reading.value if reading.valid and finite(reading.value) else 20.0
         except (TypeError,ValueError,AttributeError):room=20.0
         return Sample(at=at,top=data.get('T11'),bottom=data.get('T12'),
                       compressor=flags['compressor_running'],auxiliary=flags['dhw_aux_running'],

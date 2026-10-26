@@ -19,10 +19,29 @@
     "error": {
       "invalid_host": "Zadejte IP adresu nebo síťové jméno bez URL a portu",
       "invalid_t15": "T15 musí hlásit čerstvou číselnou teplotu 5–40 °C",
-      "panel_required": "Před spuštěním emulace odpojte původní panel a ověřte zapojení"
+      "panel_required": "Před spuštěním emulace odpojte původní panel a ověřte zapojení",
+      "duplicate_t15": "Záložní čidlo musí být jiné než primární.",
+      "recursive_t15": "Vyberte skutečné vstupní čidlo, nikoli výstup T15 této integrace nebo pomocníka Nilan T15."
     },
     "abort": {
       "already_configured": "Toto připojení převodníku je již nastavené"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Čidla pokojové teploty T15",
+        "description": "Primární čidlo má přednost. Při jeho výpadku nebo neplatném měření se použije záložní; po obnovení se integrace vrátí k primárnímu. Záložní čidlo lze ponechat prázdné. Po uložení se integrace znovu načte; nastavení převodníku a entity zůstanou zachovány.",
+        "data": {
+          "sensor_T15": "Primární čidlo pokojové teploty T15",
+          "sensor_T15_backup": "Záložní čidlo pokojové teploty T15 (volitelné)"
+        }
+      }
+    },
+    "error": {
+      "invalid_t15": "Alespoň jedno zvolené čidlo musí hlásit čerstvou teplotu 5–40 °C v jednotce °C.",
+      "duplicate_t15": "Záložní čidlo musí být jiné než primární.",
+      "recursive_t15": "Vyberte skutečné vstupní čidlo, nikoli výstup T15 této integrace nebo pomocníka Nilan T15."
     }
   }
 }

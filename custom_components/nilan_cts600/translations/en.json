@@ -19,10 +19,29 @@
     "error": {
       "invalid_host": "Enter an IP address or hostname without a URL or port",
       "invalid_t15": "T15 must report a fresh, finite temperature of 5–40 °C",
-      "panel_required": "Disconnect the physical panel and verify wiring before starting emulation"
+      "panel_required": "Disconnect the physical panel and verify wiring before starting emulation",
+      "duplicate_t15": "The backup sensor must differ from the primary sensor.",
+      "recursive_t15": "Select an input sensor, not this integration's T15 output or the legacy Nilan T15 mirror."
     },
     "abort": {
       "already_configured": "This gateway connection is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "T15 room temperature sensors",
+        "description": "Prefer the primary sensor, use the backup if its reading is unavailable or invalid, and return to the primary when it recovers. Leave the backup empty to disable it. Saving changed options reloads the integration; gateway settings and entity identities are preserved.",
+        "data": {
+          "sensor_T15": "Primary room temperature sensor (T15)",
+          "sensor_T15_backup": "Backup room temperature sensor (T15, optional)"
+        }
+      }
+    },
+    "error": {
+      "invalid_t15": "At least one selected sensor must report a fresh 5–40 °C temperature in °C.",
+      "duplicate_t15": "The backup sensor must differ from the primary sensor.",
+      "recursive_t15": "Select an input sensor, not this integration's T15 output or the legacy Nilan T15 mirror."
     }
   }
 }
