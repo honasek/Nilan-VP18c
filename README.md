@@ -107,6 +107,10 @@ In the setup form, select:
 
 The room sensor entities prefilled in the form come from the author's installation. Replace them with your own sensors when setting up a new installation.
 
+Existing installations can change the **primary** and optional **backup** room sensor under **Settings → Devices & services → Nilan CTS600 → Configure**. The form prefills the saved choices; clear the backup selector to disable it. At least one input must currently report a valid fresh Celsius temperature, and the two inputs must differ. The integration's own T15 output and the legacy `sensor.nilan_t15` mirror cannot be used as inputs. Saving changed options reloads only the integration and preserves gateway settings, entity identities and learned stores. The primary is preferred, the backup is used when the primary fails validation, and the primary is selected again as soon as it recovers.
+
+External template mirrors and automations should follow `primary_entity`, `backup_entity` and `source_entity` from the integration diagnostics instead of keeping hard-coded source IDs.
+
 The default maximum T15 reading age is 15 minutes. If `input_number.nilan_t15_max_age_minutes` exists, its value is used within the range 1–60 minutes. Missing or invalid temperature readings block control commands.
 
 ### 5. Verify operation
@@ -197,3 +201,5 @@ Original protocol and integration author: **frodef**. Original project: [nilan-c
 This distribution is licensed under the **[MIT License](LICENSE)**. It permits use, modification, redistribution and commercial use, subject to retaining the license and copyright notice.
 
 The original public-domain grant is preserved in [docs/UPSTREAM_LICENSE](docs/UPSTREAM_LICENSE) and included with the installed integration as `UPSTREAM_LICENSE`. [NOTICE](NOTICE) records the upstream attribution. The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for background; its instructions describe the original variant, so use the instructions above for this TCP variant.
+
+Run `python script/validate_t15_options.py` in an environment containing Home Assistant Core to verify the real options form, saved-choice precedence, backup removal, input guards, fallback/recovery, coordinator selection and DHW ambient input without connecting to a Nilan controller.

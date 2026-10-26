@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.26.1
+
+- Let existing installations choose primary and optional backup T15 sensors through the integration options UI. Prefill saved choices, persist explicit backup removal and reload on changed options.
+- Prefer explicit options over legacy entry data while preserving existing defaults, gateway settings and entity identities. Keep fresh Celsius/range validation and automatic fallback/recovery; reject duplicate and self-referential T15 selections.
+- Use the selected T15 input for the DHW model ambient temperature instead of a site-specific helper.
+- Add Czech/English options strings, portable source-selection regressions and a device-free native HA options-flow validation script.
+
 ## 2026.10.25.1
 
 - Normalize public thermal reserve against the current compressor DHW setpoint above 30 °C; refresh immediately on setpoint changes while preserving physical profiles and learned parameters.

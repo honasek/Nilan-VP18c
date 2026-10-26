@@ -56,3 +56,11 @@ def select_t15(get_state, primary_id: str, backup_id: str | None,
         if backup.valid:
             return backup_id, backup
     return None, primary
+
+
+def configured_t15_sources(data, options, default_primary, default_backup):
+    """Read explicit options first, preserving legacy entries and backup removal."""
+    primary = options.get("sensor_T15", data.get("sensor_T15", default_primary))
+    legacy_backup = default_backup if primary == default_primary else None
+    backup = options.get("sensor_T15_backup", data.get("sensor_T15_backup", legacy_backup))
+    return primary, backup or None

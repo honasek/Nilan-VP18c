@@ -10,7 +10,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN, DEFAULT_T15, DEFAULT_T15_BACKUP, DEFAULT_GATE, DEFAULT_MAX_AGE
 from .nilan_cts600 import CTS600, Key, nilanString
-from .t15_guard import validate_t15, select_t15
+from .t15_guard import configured_t15_sources, validate_t15, select_t15
 from .transport import TransparentTCP
 from .menu_catalog import BY_KEY, USER_PATHS, SERVICE_DHW
 from .menu_controls import MenuControls, MenuUnavailable
@@ -25,9 +25,8 @@ class CTS600Coordinator(DataUpdateCoordinator):
                          config_entry=entry, update_interval=timedelta(seconds=5))
         self.entry = entry
         self.config = entry.data
-        self.sensor_entity_id = self.config.get("sensor_T15", DEFAULT_T15)
-        self.backup_sensor_entity_id = self.config.get(
-            "sensor_T15_backup", DEFAULT_T15_BACKUP if self.sensor_entity_id == DEFAULT_T15 else None)
+        self.sensor_entity_id, self.backup_sensor_entity_id = configured_t15_sources(
+            self.config, entry.options, DEFAULT_T15, DEFAULT_T15_BACKUP)
         self.selected_sensor_entity_id = None
         self.gate_entity = self.config.get("commands_enabled_entity", DEFAULT_GATE)
         self.max_age = self.config.get("t15_max_age_seconds", DEFAULT_MAX_AGE)
