@@ -203,3 +203,9 @@ This distribution is licensed under the **[MIT License](LICENSE)**. It permits u
 The original public-domain grant is preserved in [docs/UPSTREAM_LICENSE](docs/UPSTREAM_LICENSE) and included with the installed integration as `UPSTREAM_LICENSE`. [NOTICE](NOTICE) records the upstream attribution. The historical [UPSTREAM_README.md](docs/UPSTREAM_README.md) is included for background; its instructions describe the original variant, so use the instructions above for this TCP variant.
 
 Run `python script/validate_t15_options.py` in an environment containing Home Assistant Core to verify the real options form, saved-choice precedence, backup removal, input guards, fallback/recovery, coordinator selection and DHW ambient input without connecting to a Nilan controller.
+
+## Unit ON/OFF
+
+`switch.nilan_vp18_k_power` mirrors the physical panel ON/OFF keys and reports the main-screen operating state. ON resumes the controller's selected mode rather than selecting AUTO. The climate turn-on/off actions and the existing physical ON/OFF button entities use the same guarded, serialized and verified command path. Explicit climate mode selection still selects the requested mode. A fresh valid T15 input and the existing manual-control unlock are required. Unknown modes remain unknown; power state is never inferred from fan speed or electrical draw. Repeated requests for the already confirmed state send no additional ON/OFF key, and uncertain writes are not retried.
+
+The switch changes slowly and its history is useful, so it is not excluded from Recorder. No new high-frequency diagnostic attributes are added.

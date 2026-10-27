@@ -15,6 +15,7 @@ from .transport import TransparentTCP
 from .menu_catalog import BY_KEY, USER_PATHS, SERVICE_DHW
 from .menu_controls import MenuControls, MenuUnavailable
 from .weekly_program import read_slots, set_slot, validate_slot
+from .unit_power import set_power
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -219,6 +220,9 @@ class CTS600Coordinator(DataUpdateCoordinator):
             if not self._initialized:
                 raise ConnectionError("CTS600 must reconnect before accepting commands")
             self.cts600.setT15(t15)
+            if command == "power" or (command == "mode" and value == "OFF"):
+                self._manual_until = 0
+                return set_power(self.cts600, value if command == "power" else False)
             if command == "button":
                 self.cts600.key(value)
                 self._manual_until = time.monotonic() + 30
@@ -244,6 +248,10 @@ class CTS600Coordinator(DataUpdateCoordinator):
             return self.cts600.data.copy()
 
     async def async_command(self, command, value):
+        if command == "button" and value in (Key.ON, Key.OFF):
+            command, value = "power", value is Key.ON
+        if command == "power" and type(value) is not bool:
+            raise HomeAssistantError("Zapnutí/vypnutí jednotky vyžaduje logickou hodnotu")
         async with self._lock:
             if self._closed:
                 raise HomeAssistantError("CTS600 integration unloaded")
