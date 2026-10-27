@@ -90,7 +90,7 @@ class CTS600Climate(CoordinatorEntity, ClimateEntity):
         await self.coordinator.async_command("mode", inverse[hvac_mode])
 
     async def async_turn_on(self):
-        await self.coordinator.async_command("mode", "AUTO")
+        await self.coordinator.async_command("power", True)
 
     async def async_turn_off(self):
-        await self.coordinator.async_command("mode", "OFF")
+        await self.coordinator.async_command("power", False)

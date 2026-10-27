@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.27.1
+
+- Expose a primary unit power switch with actual ON/OFF state, corresponding to the physical panel keys.
+- Resume with the native ON key instead of selecting AUTO; route climate turn-on/off and the existing ON/OFF buttons through the same serialized, guarded path.
+- Verify a fresh main screen before the key and a final refreshed mode afterwards. Skip redundant keys, retain unknown state for unknown modes and never replay an uncertain write.
+- Add synthetic-panel power tests and native HA entity/command checks without switching a real controller.
+
 ## 2026.10.26.1
 
 - Let existing installations choose primary and optional backup T15 sensors through the integration options UI. Prefill saved choices, persist explicit backup removal and reload on changed options.
