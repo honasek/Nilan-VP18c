@@ -194,6 +194,16 @@ Public DHW reserve uses the active compressor setpoint: 100% represents the 180 
 
 A passive observer measures clean starts and stops from retained actual samples. It reports approximate hysteresis, source setpoint, uncertainty and direct evidence counts. Until three starts and three stops at the active target exist, a mature cohort may be explicitly transferred from another target; contradictory observations disable that transfer. A completed cycle can remain reached after cooling inside the supported band. Compressor-off alone never establishes completion. Shadow simulations use the same reference/band; none of this turns on live control.
 
+## Evidence required for live DHW postponement
+
+Learning-day counts alone do not authorize a delay. The policy also requires at least ten distinct completed forecasts on three dates for the current compressor setpoint in HOTWATER mode. Only the first issued prediction for each observed completion is counted; censored cases and future outcomes cannot qualify. HEATING and COOLING do not yet qualify for live postponement.
+
+The effective finishing margin is the largest of the configured value, 120 minutes and the observed 90th percentile of late completion errors plus 15 minutes, rounded up to five minutes. An observed error beyond that margin or a required margin above 180 minutes blocks readiness. Candidate simulations use the same effective margin.
+
+A bounded hourly record stores actual T11 minima and observation coverage. Readiness requires at least 95% observed coverage of the last 72 hours with no minimum below the configured comfort threshold. Gaps above five minutes receive no credit, and partial boundary hours are counted conservatively. Existing stores migrate with empty new comfort evidence while retaining all earlier learning; the new evidence must first accumulate.
+
+`control_readiness` in the existing shadow result explains missing evidence and reports the effective margin. A live candidate must carry fresh positive readiness for its exact target, plus both typical/stress scenario checks, post-use comfort and the existing actual-reserve guards. None of these checks enables control automatically. The general automatic-control unlock and live switch remain explicit opt-ins, and the live switch does not rearm after a restart. No new entity or Recorder configuration is required.
+
 ## Credits and license
 
 Original protocol and integration author: **frodef**. Original project: [nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant).

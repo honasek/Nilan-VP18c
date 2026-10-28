@@ -26,6 +26,16 @@ def candidate(context, now):
         return None, 'no_eligible_full_delay'
     if plan.get('learning', {}).get('learning_ready') is not True:
         return None, 'learning_not_ready'
+    readiness = plan.get('control_readiness') or {}
+    settings = plan.get('settings') or {}
+    if (readiness.get('version') != 1 or readiness.get('ready') is not True
+            or readiness.get('reasons') != [] or readiness.get('target_c') != context.get('target')
+            or readiness.get('mode') != 'HOTWATER'
+            or not number(readiness.get('as_of')) or not -5 <= now-readiness['as_of'] <= 120
+            or not number(readiness.get('effective_margin_min'))
+            or not 120 <= readiness['effective_margin_min'] <= 180
+            or not number(settings.get('margin_min')) or settings['margin_min'] < readiness['effective_margin_min']):
+        return None, 'accuracy_or_comfort_not_validated'
     issued = plan.get('issued_epoch')
     sample = plan.get('initial_sample') or {}
     if not number(issued) or not -5 <= now-issued <= 120:
@@ -34,7 +44,7 @@ def candidate(context, now):
         return None, 'stale_telemetry'
     if not number(sample.get('at')) or not -5 <= now-sample['at'] <= 180:
         return None, 'stale_model_sample'
-    if sample.get('auxiliary') is not False or sample.get('mode') not in ('HOTWATER', 'HEATING', 'COOLING'):
+    if sample.get('auxiliary') is not False or sample.get('mode') != 'HOTWATER':
         return None, 'unsupported_operating_state'
     settings = plan.get('settings') or {}
     reserve = settings.get('reserve_pct')
@@ -59,10 +69,10 @@ def candidate(context, now):
             if r.get('variant') == 'full_delay' and epoch(r.get('start_at')) == start]
     if not any(r.get('reserve_met') is True and r.get('deadline_met') is True
                and r.get('cancelled_paths') == 0
-               and (plan.get('simulation_version',1)<2
-                    or (r.get('post_use_comfort_met') is True
-                        and r.get('expected_profile_passes') is True
-                        and r.get('stress_profile_passes') is True)) for r in rows):
+               and plan.get('simulation_version',0)>=3
+               and r.get('post_use_comfort_met') is True
+               and r.get('expected_profile_passes') is True
+               and r.get('stress_profile_passes') is True for r in rows):
         return None, 'scenario_not_verified'
     return {'target': target, 'applied': 5, 'release_at': start, 'deadline': deadline,
             'reserve_pct': reserve, 'top_min_c': top}, 'eligible'

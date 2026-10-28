@@ -23,12 +23,14 @@ def context(now=NOW):
             'actual_target': 50, 'top': 55, 'bottom': 30, 'lower': 65,
             'plan': {'status': 'would_delay', 'selected_variant': 'full_delay',
                      'learning': {'learning_ready': True}, 'issued_epoch': now,
+                     'simulation_version':3,'control_readiness':{'version':1,'ready':True,'reasons':[],'target_c':50,'mode':'HOTWATER','as_of':now,'effective_margin_min':120},
                      'initial_sample': {'at': now, 'auxiliary': False, 'mode': 'HOTWATER'},
-                     'settings': {'reserve_pct': 35, 'top_min_c': 45}, 'target_c': 50,
+                     'settings': {'reserve_pct': 35, 'top_min_c': 45,'margin_min':120}, 'target_c': 50,
                      'latest_start': stamp(NOW+3600), 'deadline': stamp(NOW+7200),
                      'window_start': stamp(NOW+1800), 'scenarios': [
                          {'variant': 'full_delay', 'start_at': stamp(NOW+3600),
-                          'reserve_met': True, 'deadline_met': True, 'cancelled_paths': 0}]}}
+                          'reserve_met': True, 'deadline_met': True, 'cancelled_paths': 0,
+                          'post_use_comfort_met':True,'expected_profile_passes':True,'stress_profile_passes':True}]}}
 
 
 class Device:
