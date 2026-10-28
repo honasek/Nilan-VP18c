@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.10.28.1
+
+- Require current-target HOTWATER completion evidence and observed temperature comfort before live DHW postponement; counts of learning days alone no longer qualify.
+- Freeze one early forecast per real completion, apply a minimum 120-minute margin with an error-based increase, and require observed coverage of the last 72 hours without a T11 comfort breach.
+- Use the same effective margin in candidate simulations; reject old plans without fresh readiness evidence and retain both typical/stress and post-use comfort guards.
+- Persist bounded hourly comfort evidence and migrate existing shadow stores without discarding thermal learning, forecasts or hysteresis. Collection continues with live control off; no automatic activation or new entities.
+
 ## 2026.10.27.1
 
 - Expose a primary unit power switch with actual ON/OFF state, corresponding to the physical panel keys.

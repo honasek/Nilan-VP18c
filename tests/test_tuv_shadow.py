@@ -193,16 +193,16 @@ def test_search_covers_full_window_when_earliest_candidate_fails(monkeypatch):
                     'normal',demand_profile=profile(),horizon=at('2026-10-24T09:00:00'))
     def simulated(model,learner,settings,target,now,start,deadline,variant,*args,**kwargs):
         row=copy.deepcopy(template)
-        good=at('2026-10-24T03:00:00')<=start<=at('2026-10-24T03:35:00')
+        good=at('2026-10-24T02:00:00')<=start<=at('2026-10-24T02:35:00')
         row.update(variant=variant,start_at=shadow.stamp(start),deadline_met=good,reserve_met=True,
                    post_use_comfort_met=True,cancelled_paths=0,finish_at=shadow.stamp(start+1800))
         return row
     monkeypatch.setattr(shadow,'simulate',simulated)
     plan=shadow.make_plan(o,shadow.ShadowLearner(),settings(),50,now)
-    assert plan['latest_start']==shadow.stamp(at('2026-10-24T03:35:00'))
+    assert plan['latest_start']==shadow.stamp(at('2026-10-24T02:35:00'))
     checks=[r for r in plan['candidate_evaluations'] if r['variant']=='full_delay']
     assert checks[0]['passes'] is False and any(r['passes'] for r in checks)
-    assert any(r['start_at']==shadow.stamp(at('2026-10-24T04:30:00')) for r in checks)
+    assert any(r['start_at']==shadow.stamp(at('2026-10-24T03:00:00')) for r in checks)
     assert plan['status']=='collecting' and plan['validated_for_control'] is False
     assert next(r for r in plan['scenarios'] if r.get('latest_start_candidate'))['eligible']
     json.dumps(plan,allow_nan=False)
@@ -247,9 +247,9 @@ def test_new_live_plan_must_pass_post_use_and_both_profiles(field):
     row={'variant':'full_delay','start_at':shadow.stamp(start),'reserve_met':True,'deadline_met':True,
          'cancelled_paths':0,'post_use_comfort_met':True,'expected_profile_passes':True,'stress_profile_passes':True}
     ctx={'permitted':True,'valid':True,'sample_at':now,'target':50,'actual_target':50,'top':55,'bottom':45,'lower':70,
-         'plan':{'simulation_version':2,'status':'would_delay','selected_variant':'full_delay',
+         'plan':{'simulation_version':3,'control_readiness':{'version':1,'ready':True,'reasons':[],'target_c':50,'mode':'HOTWATER','as_of':now,'effective_margin_min':120},'status':'would_delay','selected_variant':'full_delay',
                  'learning':{'learning_ready':True},'issued_epoch':now,'initial_sample':{'at':now,'auxiliary':False,'mode':'HOTWATER'},
-                 'settings':{'reserve_pct':35,'top_min_c':41},'target_c':50,'latest_start':shadow.stamp(start),
+                 'settings':{'reserve_pct':35,'top_min_c':41,'margin_min':120},'target_c':50,'latest_start':shadow.stamp(start),
                  'deadline':shadow.stamp(now+7200),'window_start':shadow.stamp(start),'scenarios':[row]}}
     assert live.candidate(ctx,now)[0] is not None
     row[field]=False

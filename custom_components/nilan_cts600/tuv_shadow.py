@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, time, timezone
 from math import ceil
 from statistics import median
 from zoneinfo import ZoneInfo
+from . import tuv_validation as validation
 
 from .tuv_model import finite, soc, predict, CP_WH_L_K, CELL_L
 
@@ -195,6 +196,7 @@ class ShadowLearner:
         self.gaps=0
         self.samples=0
         self.revision=0
+        self.comfort={}
 
     def _credit(self,start,end,litres,tz_name):
         tz=ZoneInfo(tz_name)
@@ -222,6 +224,7 @@ class ShadowLearner:
                and previous.compressor is not None and previous.auxiliary is not None
                and s.compressor is not None and s.auxiliary is not None)
         if valid:
+            validation.credit(self.comfort,self.last_at,s.at,min(previous.top,s.top))
             draw=median(p.draw_l_min for p in model.particles) if drawing and model.draw_probability>=.45 else 0.0
             self._credit(self.last_at,s.at,max(0,min(20,draw))*dt,settings.timezone)
         elif self.last_at is not None:
@@ -318,13 +321,15 @@ class ShadowLearner:
                 'previous_energy':self.previous_energy,'previous_drawing':self.previous_drawing,
                 'clean':deepcopy(self.clean),'rates':deepcopy(self.rates),'session':deepcopy(self.session),
                 'sessions':deepcopy(self.sessions),'pending':deepcopy(self.pending),'scores':deepcopy(self.scores),
-                'gaps':self.gaps,'samples':self.samples,'revision':self.revision}
+                'gaps':self.gaps,'samples':self.samples,'revision':self.revision,'comfort':deepcopy(self.comfort)}
 
     @classmethod
     def restore(cls,data,now):
         from .tuv_model import Sample
         if not isinstance(data,dict) or data.get('version')!=VERSION:raise ValueError('Invalid shadow version')
         result=cls()
+        data=deepcopy(data)
+        data.setdefault('comfort',{})
         if not isinstance(data.get('days'),dict) or len(data['days'])>47:raise ValueError('Invalid shadow days')
         for day,row in data['days'].items():
             datetime.strptime(day,'%Y-%m-%d')
@@ -334,6 +339,11 @@ class ShadowLearner:
                     raise ValueError('Invalid demand bins')
         for key,limit in (('rates',256),('sessions',128),('pending',48),('scores',256)):
             if not isinstance(data.get(key),list) or len(data[key])>limit:raise ValueError('Invalid shadow evidence')
+        if (not isinstance(data.get('comfort'),dict) or len(data['comfort'])>100
+                or any(not str(k).isdigit() or not isinstance(v,dict) or set(v)!= {'seconds','min_top'}
+                       or not finite(v['seconds']) or not 0<=v['seconds']<=3600
+                       or not finite(v['min_top']) or not 0<=v['min_top']<=95 for k,v in data['comfort'].items())):
+            raise ValueError('Invalid comfort evidence')
         # Validate all persisted trees, including optional ongoing sessions, atomically.
         def check(value,depth=0):
             if depth>8:raise ValueError('Invalid shadow nesting')
@@ -576,6 +586,8 @@ def make_plan(model,learner,settings,target,now,*,thermostat=None):
     if s.auxiliary is None or s.compressor is None:return empty_plan(now,'Chybí potvrzený stav kompresoru nebo spirály')
     if s.mode not in MODES or model.phase in ('gap','mismatch','initializing'):
         return empty_plan(now,'Čekám na stabilní známý provozní režim')
+    readiness=validation.evaluate(learner,target,s.mode,now,settings.top_min_c,settings.margin_min)
+    settings=replace(settings,margin_min=min(180,readiness['effective_margin_min']))
     window=next_window(now,settings)
     start=max(now,window['start']);deadline=window['end']
     horizon=evaluation_horizon(now,window,settings)
@@ -642,7 +654,10 @@ def make_plan(model,learner,settings,target,now,*,thermostat=None):
     summary=learner.summary()
     if not summary['learning_ready']:
         status='collecting';reason='Sbírám celé dny a průběhy dohřevu; doporučení odkladu zatím není ověřené'
+    elif not readiness['ready']:
+        status='validation_pending';reason='Odklad čeká na ověřenou chybu dohřevu a 72 hodin teplotního komfortu'
     return {'issued_at':stamp(now),'issued_epoch':now,'status':status,'reason':reason,
+            'control_readiness':readiness,
             'simulation_version':SIMULATION_VERSION,'shadow_only':True,'validated_for_control':False,
             'selected_variant':selected['variant'],'window_kind':window['kind'],
             'window_start':stamp(window['start']),'deadline':stamp(deadline),
