@@ -2,6 +2,8 @@
 from homeassistant.components.water_heater import WaterHeaterEntity, WaterHeaterEntityFeature
 from homeassistant.const import UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
+from .const import DOMAIN
 from .control_entity import CTS600SettingEntity
 from .menu_catalog import BY_KEY
 from .menu_catalog import canonical
@@ -64,8 +66,6 @@ class CTS600SeparateHeater(CTS600SettingEntity,WaterHeaterEntity):
         key='dhw_temperature' if kind=='compressor' else 'dhw_aux_temperature'
         super().__init__(coordinator,BY_KEY[key])
         self.probe='T12' if kind=='compressor' else 'T11'
-        slug='kompresor' if kind=='compressor' else 'spirala'
-        self.entity_id=f'water_heater.nilan_vp18_k_tuv_{slug}'
         self._attr_unique_id=f'{coordinator.entry.entry_id}-water-heater-{kind}'
         self._attr_name=f'{coordinator.name} TUV {"kompresor" if kind=="compressor" else "spirála"}'
         self._attr_max_temp=self.spec.maximum
@@ -94,7 +94,8 @@ class CTS600SeparateHeater(CTS600SettingEntity,WaterHeaterEntity):
             active=True if status in ('HOTWATER','DHW','WATERHEAT','VARMVAND','OHREVVODY') else (False if status in ('OFF','HEATING','COOLING','VENTILATION') else None)
         return {**super().extra_state_attributes,'current_probe':self.probe,'target_probe':self.probe,
                 'heating_active':active,'controller_status':data.get('status'),
-                'off_control_entity':'select.nilan_vp18_k_dhw_aux_temperature' if self.kind=='auxiliary' else None}
+                'off_control_entity':er.async_get(self.hass).async_get_entity_id('select',DOMAIN,
+                    f'{self.coordinator.entry.entry_id}-setting-dhw_aux_temperature') if self.kind=='auxiliary' and self.hass else None}
 
     async def async_set_temperature(self,**kwargs):
         value=kwargs.get('temperature')

@@ -20,7 +20,6 @@ class FilterMaintenanceButton(CoordinatorEntity,ButtonEntity):
 
     def __init__(self,runtime):
         super().__init__(runtime)
-        self.entity_id='button.nilan_vp18_k_filter_record_maintenance'
         self._attr_unique_id=f'{runtime.main.entry.entry_id}-filter-record-maintenance'
         self._attr_name=f'{runtime.main.name} Zapsat dnešní údržbu filtru v HA'
         self._attr_device_info=runtime.main.device_info

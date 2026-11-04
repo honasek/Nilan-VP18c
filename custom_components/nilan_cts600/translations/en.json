@@ -30,11 +30,46 @@
   "options": {
     "step": {
       "init": {
-        "title": "T15 room temperature sensors",
-        "description": "Prefer the primary sensor, use the backup if its reading is unavailable or invalid, and return to the primary when it recovers. Leave the backup empty to disable it. Saving changed options reloads the integration; gateway settings and entity identities are preserved.",
+        "title": "Room sensors and external inputs",
+        "description": "Choose your own sensors and permission helpers. Optional inputs can be cleared. Continue to configure passive simulation and night heating. Saving reloads the integration and preserves entity identities.",
         "data": {
           "sensor_T15": "Primary room temperature sensor (T15)",
-          "sensor_T15_backup": "Backup room temperature sensor (T15, optional)"
+          "sensor_T15_backup": "Backup room temperature sensor (T15, optional)",
+          "commands_enabled_entity": "Control unlock helper",
+          "t15_max_age_seconds": "Maximum T15 age (seconds)",
+          "t15_max_age_entity": "Optional T15 maximum age helper (minutes)",
+          "automatic_control_entity": "Automatic control permission helper",
+          "service_control_entity": "Service control permission helper",
+          "power_entity": "Measured total unit power (W or kW, optional)"
+        }
+      },
+      "shadow": {
+        "title": "Passive DHW simulation (optional)",
+        "description": "Select existing helpers. Blank inputs use documented defaults; no enable helper keeps collection off. No helper names are required.",
+        "data": {
+          "shadow_enabled_entity": "Enable passive collection and simulation",
+          "shadow_day_enabled_entity": "Enable daytime simulation window",
+          "shadow_window_start_entity": "Night simulation start",
+          "shadow_window_end_entity": "Night simulation end",
+          "shadow_day_start_entity": "Daytime simulation start",
+          "shadow_day_end_entity": "Daytime simulation end",
+          "shadow_reserve_pct_entity": "Minimum model reserve (%)",
+          "shadow_top_min_c_entity": "Minimum upper temperature T11 (°C)",
+          "shadow_prior_daily_l_entity": "Provisional daily tank draw (litres)",
+          "shadow_margin_min_entity": "Completion margin (minutes)",
+          "shadow_initialized_entity": "Optional settings-initialized helper"
+        }
+      },
+      "night": {
+        "title": "Night DHW heating (optional)",
+        "description": "Select the enable helper, target, two time-only helpers, block duration and timestamp-keyed 15-minute price curve. No selection enables heating automatically.",
+        "data": {
+          "night_enabled_entity": "Enable night DHW heating helper",
+          "night_target_entity": "Night target (°C)",
+          "night_start_entity": "Allowed window start (time only)",
+          "night_end_entity": "Allowed window end (time only)",
+          "night_duration_entity": "Block duration (minutes, multiples of 15)",
+          "price_entity": "15-minute electricity price curve"
         }
       }
     },

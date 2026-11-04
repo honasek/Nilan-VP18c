@@ -30,11 +30,46 @@
   "options": {
     "step": {
       "init": {
-        "title": "Čidla pokojové teploty T15",
-        "description": "Primární čidlo má přednost. Při jeho výpadku nebo neplatném měření se použije záložní; po obnovení se integrace vrátí k primárnímu. Záložní čidlo lze ponechat prázdné. Po uložení se integrace znovu načte; nastavení převodníku a entity zůstanou zachovány.",
+        "title": "Pokojová čidla a externí vstupy",
+        "description": "Vyberte vlastní čidla a helpery povolení. Volitelné vstupy lze vymazat. Pokračujte nastavením pasivní simulace a nočního dohřevu. Uložení znovu načte integraci a zachová identity entit.",
         "data": {
           "sensor_T15": "Primární čidlo pokojové teploty T15",
-          "sensor_T15_backup": "Záložní čidlo pokojové teploty T15 (volitelné)"
+          "sensor_T15_backup": "Záložní čidlo pokojové teploty T15 (volitelné)",
+          "commands_enabled_entity": "Helper povolení ovládání",
+          "t15_max_age_seconds": "Maximální stáří T15 (sekundy)",
+          "t15_max_age_entity": "Volitelný helper stáří T15 (minuty)",
+          "automatic_control_entity": "Helper povolení automatického řízení",
+          "service_control_entity": "Helper povolení servisního ovládání",
+          "power_entity": "Měřený příkon celé jednotky (W nebo kW, volitelné)"
+        }
+      },
+      "shadow": {
+        "title": "Pasivní simulace TUV (volitelné)",
+        "description": "Vyberte existující helpery. Prázdné vstupy používají zdokumentované výchozí hodnoty; bez helperu povolení je sběr vypnutý. Názvy helperů jsou libovolné.",
+        "data": {
+          "shadow_enabled_entity": "Povolit pasivní sběr a simulaci",
+          "shadow_day_enabled_entity": "Povolit denní okno simulace",
+          "shadow_window_start_entity": "Začátek noční simulace",
+          "shadow_window_end_entity": "Konec noční simulace",
+          "shadow_day_start_entity": "Začátek denní simulace",
+          "shadow_day_end_entity": "Konec denní simulace",
+          "shadow_reserve_pct_entity": "Minimální modelová zásoba (%)",
+          "shadow_top_min_c_entity": "Minimální horní teplota T11 (°C)",
+          "shadow_prior_daily_l_entity": "Předpokládaný denní odběr z nádrže (litry)",
+          "shadow_margin_min_entity": "Časová rezerva dokončení (minuty)",
+          "shadow_initialized_entity": "Volitelný helper inicializace nastavení"
+        }
+      },
+      "night": {
+        "title": "Noční dohřev TUV (volitelné)",
+        "description": "Vyberte zapínací helper, teplotu, dva časové helpery, délku bloku a čtvrthodinovou cenovou křivku s časovými klíči v atributech. Výběr sám ohřev nezapíná.",
+        "data": {
+          "night_enabled_entity": "Helper zapnutí nočního dohřevu TUV",
+          "night_target_entity": "Noční cílová teplota (°C)",
+          "night_start_entity": "Začátek povoleného okna (pouze čas)",
+          "night_end_entity": "Konec povoleného okna (pouze čas)",
+          "night_duration_entity": "Délka bloku (minuty, násobky 15)",
+          "price_entity": "Čtvrthodinová cenová křivka elektřiny"
         }
       }
     },

@@ -25,7 +25,6 @@ class TUVSensor(CoordinatorEntity,SensorEntity):
     def __init__(self,runtime,key,name):
         super().__init__(runtime)
         self.key=key
-        self.entity_id=f'sensor.nilan_tuv_{key}'
         self._attr_name=name
         self._attr_unique_id=f'{runtime.main.entry.entry_id}-tuv-observer-{key}'
         self._attr_device_info=runtime.main.device_info

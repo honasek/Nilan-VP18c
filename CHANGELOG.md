@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026.11.4.0
+
+- Add an opt-in cheapest contiguous night DHW target boost with configurable helper inputs, T12 completion, durable restore and mutual exclusion with live delay.
+- Resolve HA timezone asynchronously, move setup imports to module scope and expose every external input through selectors. Migrate existing helper mappings without changing sensor choices, entity identities or learned stores.
+- Remove household sensor defaults, document assumed power and use registry identities for integration-owned controls. Lead HACS installation with catalog search and retain the pending-catalog fallback.
+
 ## 2026.10.28.1
 
 - Require current-target HOTWATER completion evidence and observed temperature comfort before live DHW postponement; counts of learning days alone no longer qualify.

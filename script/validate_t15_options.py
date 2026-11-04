@@ -52,23 +52,26 @@ async def validate(component: Path) -> dict:
             result = await flow.async_step_init()
             assert result['type'] == 'form' and result['step_id'] == 'init'
             fields = {str(key): (key.description or {}).get('suggested_value') for key in result['data_schema'].schema}
-            assert fields == {'sensor_T15': primary, 'sensor_T15_backup': backup}
+            assert fields['sensor_T15'] == primary and fields['sensor_T15_backup'] == backup
             cases += 1
             registry.async_get_entity_id.assert_called_with('sensor', 'nilan_cts600', f'{entry.entry_id}-sensor-T15')
             entry.options = {'sensor_T15': 'sensor.other_room', 'sensor_T15_backup': None, 'future_option': 7}
             result = await flow.async_step_init()
             fields = {str(key): (key.description or {}).get('suggested_value') for key in result['data_schema'].schema}
-            assert fields == {'sensor_T15': 'sensor.other_room', 'sensor_T15_backup': None}
+            assert fields['sensor_T15'] == 'sensor.other_room' and fields['sensor_T15_backup'] is None
             saved = await flow.async_step_init({'sensor_T15': primary})
-            assert saved['type'] == 'create_entry' and saved['data'] == {
-                'sensor_T15': primary, 'sensor_T15_backup': None, 'future_option': 7}
+            assert saved['step_id']=='shadow'
+            saved = await flow.async_step_shadow({})
+            assert saved['step_id']=='night'
+            saved = await flow.async_step_night({})
+            assert saved['type'] == 'create_entry' and saved['data']['sensor_T15']==primary
+            assert saved['data']['sensor_T15_backup'] is None and saved['data']['future_option']==7
             assert entry.data == data  # No host, port or commissioning rewrite.
             cases += 1
             for submitted, field, error in [
                 ({'sensor_T15': primary, 'sensor_T15_backup': primary}, 'sensor_T15_backup', 'duplicate_t15'),
                 ({'sensor_T15': own}, 'sensor_T15', 'recursive_t15'),
                 ({'sensor_T15': primary, 'sensor_T15_backup': own}, 'sensor_T15_backup', 'recursive_t15'),
-                ({'sensor_T15': 'sensor.nilan_t15'}, 'sensor_T15', 'recursive_t15'),
                 ({'sensor_T15': 'light.not_a_sensor'}, 'sensor_T15', 'invalid_t15'),
             ]:
                 result = await flow.async_step_init(submitted)
@@ -76,7 +79,7 @@ async def validate(component: Path) -> dict:
                 cases += 1
             hass.states.async_set(primary, 'unavailable', {'unit_of_measurement': '°C'})
             result = await flow.async_step_init({'sensor_T15': primary, 'sensor_T15_backup': backup})
-            assert result['type'] == 'create_entry'  # Valid backup permits offline primary.
+            assert result['step_id']=='shadow'  # Valid backup permits offline primary.
             cases += 1
             hass.states.async_set(backup, 'unavailable', {'unit_of_measurement': '°C'})
             result = await flow.async_step_init({'sensor_T15': primary, 'sensor_T15_backup': backup})
@@ -84,9 +87,10 @@ async def validate(component: Path) -> dict:
             cases += 1
             hass.states.async_set(primary, '21.5', {'unit_of_measurement': '°C'})
             hass.states.async_set(backup, '20', {'unit_of_measurement': '°C'})
+            # No conventionally named helper changes an unrelated installation.
             hass.states.async_set('input_number.nilan_t15_max_age_minutes', 'unknown')
             result = await flow.async_step_init({'sensor_T15': primary})
-            assert result['errors']['sensor_T15'] == 'invalid_t15'
+            assert result['step_id']=='shadow'
             cases += 1
             hass.states.async_remove('input_number.nilan_t15_max_age_minutes')
 

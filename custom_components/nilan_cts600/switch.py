@@ -16,7 +16,6 @@ class CTS600PowerSwitch(CoordinatorEntity, SwitchEntity):
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
-        self.entity_id = 'switch.nilan_vp18_k_power'
         self._attr_name = f'{coordinator.name} Zapnout / vypnout'
         self._attr_unique_id = f'{coordinator.entry.entry_id}-power'
         self._attr_device_info = coordinator.device_info
@@ -48,7 +47,6 @@ class TUVLiveSwitch(CoordinatorEntity, SwitchEntity):
 
     def __init__(self, runtime):
         super().__init__(runtime)
-        self.entity_id = 'switch.nilan_tuv_live_control'
         self._attr_unique_id = f'{runtime.main.entry.entry_id}-tuv-live-control'
         self._attr_device_info = runtime.main.device_info
 

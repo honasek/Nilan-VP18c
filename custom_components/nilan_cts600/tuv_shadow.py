@@ -49,7 +49,7 @@ class Settings:
     margin_min: float=30.0
     timezone: str='Europe/Prague'
 
-    def validate(self):
+    def validate(self, resolved_zone=None):
         if type(self.enabled) is not bool or type(self.day_enabled) is not bool:
             raise ValueError('Neznámé povolení shadow výpočtu')
         for text in (self.window_start,self.window_end,self.day_start,self.day_end):
@@ -59,8 +59,14 @@ class Settings:
             raise ValueError('Začátek a konec okna se shodují')
         for value,lo,hi in ((self.reserve_pct,5,90),(self.top_min_c,35,60),(self.prior_daily_l,0,500),(self.margin_min,0,180)):
             if not finite(value) or not lo<=value<=hi:raise ValueError('Neplatná rezerva nebo předpoklad odběru')
-        ZoneInfo(self.timezone)
+        # HA supplies its asynchronously resolved zone. Standalone callers run
+        # synchronously and may resolve here. _zone is not a serialized field.
+        object.__setattr__(self, '_zone', resolved_zone or ZoneInfo(self.timezone))
         return self
+
+    @property
+    def zone(self):
+        return getattr(self, '_zone', None) or ZoneInfo(self.timezone)
 
 
 def wall_timestamp(day, text, tz):

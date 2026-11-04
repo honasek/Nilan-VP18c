@@ -8,6 +8,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers.storage import Store
+from .entity_config import selected, is_on
 from .const import DOMAIN, DEFAULT_T15, DEFAULT_T15_BACKUP, DEFAULT_GATE, DEFAULT_MAX_AGE
 from .nilan_cts600 import CTS600, Key, nilanString
 from .t15_guard import configured_t15_sources, validate_t15, select_t15
@@ -25,7 +27,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name=entry.data.get("name", "Nilan VP18 K"),
                          config_entry=entry, update_interval=timedelta(seconds=5))
         self.entry = entry
-        self.config = entry.data
+        self.config = {**entry.data, **entry.options}
         self.sensor_entity_id, self.backup_sensor_entity_id = configured_t15_sources(
             self.config, entry.options, DEFAULT_T15, DEFAULT_T15_BACKUP)
         self.selected_sensor_entity_id = None
@@ -56,10 +58,13 @@ class CTS600Coordinator(DataUpdateCoordinator):
                                       name=self.name)
 
     def t15_reading(self):
-        threshold = self.hass.states.get("input_number.nilan_t15_max_age_minutes")
+        threshold_id = selected(self.config, 't15_max_age_entity')
+        threshold = self.hass.states.get(threshold_id) if threshold_id else None
         max_age = self.max_age
-        if threshold is not None:
+        if threshold_id:
             try:
+                if threshold is None or threshold.attributes.get('restored'):
+                    raise ValueError('Missing T15 age setting')
                 minutes = float(threshold.state)
                 if not 1 <= minutes <= 60:
                     raise ValueError("Invalid T15 age threshold")
@@ -76,13 +81,12 @@ class CTS600Coordinator(DataUpdateCoordinator):
         reading = self.t15_reading()
         if not reading.valid:
             raise HomeAssistantError(f"T15 není platná: {reading.reason}")
-        if require_commands and not self.hass.states.is_state(self.gate_entity, "on"):
+        if require_commands and not is_on(self.hass, self.config, 'commands_enabled_entity'):
             raise HomeAssistantError("Ovládání Nilan je uzamčeno; nejprve dokončete zprovoznění")
         return reading.value
 
     async def async_restore_options(self):
         """Restore observed choices only for the same controller type/firmware."""
-        from homeassistant.helpers.storage import Store
         self._options_store=Store(self.hass,1,f'{DOMAIN}.{self.entry.entry_id}.menu_options')
         try:stored=await self._options_store.async_load()
         except Exception:
@@ -201,6 +205,9 @@ class CTS600Coordinator(DataUpdateCoordinator):
                 raise UpdateFailed(str(exc)) from exc
 
     async def async_shutdown(self):
+        night_runtime = getattr(self, '_tuv_night_runtime', None)
+        if night_runtime is not None:
+            await night_runtime.async_shutdown()
         live_runtime = getattr(self, '_tuv_live_runtime', None)
         if live_runtime is not None:
             await live_runtime.async_shutdown()
@@ -336,6 +343,21 @@ class CTS600Coordinator(DataUpdateCoordinator):
             self.async_set_updated_data(result)
             return True
 
+    async def async_read_dhw_target(self):
+        """Fresh guarded physical value before creating a recovery journal."""
+        async with self._lock:
+            if self._closed:
+                raise HomeAssistantError('CTS600 integration unloaded')
+            self._check_guard(require_commands=True)
+            try:
+                return await self.hass.async_add_executor_job(self._live_read_target_sync)
+            except Exception as exc:
+                self.last_error = str(exc)
+                self._initialized = False
+                await self.hass.async_add_executor_job(self.transport.close)
+                self.async_set_update_error(UpdateFailed(str(exc)))
+                raise HomeAssistantError(f'Fresh DHW target read failed: {exc}') from exc
+
     async def async_menu_command(self,command,payload):
         # Validate before entering the executor/socket, then serialize the whole transaction.
         protected=command=='discover_service' or command=='acknowledge_alarm' and payload.get('code')!=19
@@ -361,7 +383,7 @@ class CTS600Coordinator(DataUpdateCoordinator):
         async with self._lock:
             if self._closed:raise HomeAssistantError('CTS600 integration unloaded')
             t15=self._check_guard(require_commands=command not in ('read_weekly','read_profile','read_alarm_history'))
-            if protected and not self.hass.states.is_state('input_boolean.nilan_service_control_enabled','on'):
+            if protected and not is_on(self.hass, self.config, 'service_control_entity'):
                 raise HomeAssistantError('Servisní nastavení Nilan je uzamčeno')
             try:
                 result=await self.hass.async_add_executor_job(self._menu_command_sync,command,payload,t15)

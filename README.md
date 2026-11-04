@@ -4,7 +4,7 @@
 
 A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Current version: **2026.10.21.2**, targeting Home Assistant Core **2026.10.2**. This release verifies fresh edit fields and individual steps when changing the room target or fan level. Support for individual menu settings depends on the unit and its firmware. The repository name does not imply that every VP18 variant has been tested.
+Current version: **2026.11.4.0**, targeting Home Assistant Core **2026.10.4** (current stable at implementation). Menu support depends on the controller and firmware.
 
 ## Features
 
@@ -21,13 +21,9 @@ The DHW model provides estimates based on sensor readings and learned behavior. 
 
 ## Installation with HACS
 
-1. In HACS, open **⋮ → Custom repositories**.
-2. Add `https://github.com/honasek/Nilan-VP18c` with the **Integration** category.
-3. Download **Nilan VP18c / CTS600** and restart Home Assistant.
-4. Prepare a room temperature sensor and a control unlock helper as described below.
-5. Open **Settings → Devices & services → Add integration → Nilan CTS600**.
-
-The repository can be added as a custom repository. It is not currently listed in the default HACS catalog.
+1. Search HACS for **Nilan VP18c / CTS600** and download it when available in the default catalog.
+2. While [catalog inclusion](https://github.com/hacs/default/pull/12692) is pending, add `https://github.com/honasek/Nilan-VP18c` under **⋮ → Custom repositories → Integration**, then download it.
+3. Restart Home Assistant, prepare a room sensor and control unlock helper, then open **Settings → Devices & services → Add integration → Nilan CTS600**.
 
 Select a published version in the download dialog. HACS installs files from `custom_components/nilan_cts600` in the corresponding GitHub release; no manual extraction or extra nested folder is needed. See [Releases](https://github.com/honasek/Nilan-VP18c/releases) for available versions.
 
@@ -111,7 +107,7 @@ Existing installations can change the **primary** and optional **backup** room s
 
 External template mirrors and automations should follow `primary_entity`, `backup_entity` and `source_entity` from the integration diagnostics instead of keeping hard-coded source IDs.
 
-The default maximum T15 reading age is 15 minutes. If `input_number.nilan_t15_max_age_minutes` exists, its value is used within the range 1–60 minutes. Missing or invalid temperature readings block control commands.
+The default maximum T15 reading age is 15 minutes. An optional maximum-age helper can be selected in Options (1–60 minutes); otherwise the configured maximum age in seconds is used. Missing or invalid temperature readings block control commands.
 
 ### 5. Verify operation
 
@@ -126,9 +122,9 @@ To restore the physical panel, first disable the integration so it stops emulati
 
 ## Optional live DHW delay control
 
-`input_boolean.nilan_tuv_shadow_enabled` enables collection and simulation only. Switching it off does not enable live control.
+Select your collection-enable helper under **Options → Passive DHW simulation**. It enables passive collection and simulation only.
 
-The integration provides a separate **`switch.nilan_tuv_live_control`**. Before turning it on, enable your configured control unlock helper, `input_boolean.nilan_automatic_control_enabled` and `input_boolean.nilan_tuv_shadow_enabled`. These existing helpers are supplied by the home configuration; HACS does not create them. Missing helpers keep live control blocked.
+The integration provides a separate **Nilan TUV live delay control** switch. Select your control unlock, automatic-control permission and passive-collection helpers in Options, then enable them before arming live delay. Missing or invalid selected permissions block live control. These helpers may have any entity IDs. HACS does not create external helpers.
 
 Live control accepts only a fresh, learned **full-delay** scenario with a verified completion deadline and sufficient current thermal reserve. Collecting, partial top-up, earlier-start, stale or unsupported scenarios leave normal heating in charge. While armed, the plan is refreshed every minute. The model is an estimate, not a guarantee of hot-water availability.
 
@@ -146,7 +142,7 @@ Menu changes use serialized operations and are verified by reading the value bac
 
 The filter maintenance date, DHW model and learned data are saved in Home Assistant storage. Saving a maintenance date does not send a command to the unit or acknowledge its alarm. Keep this stored data when updating the integration.
 
-The model and simulation may use helpers and measurement entities from a particular home configuration. This repository does not include personal `configuration.yaml` files, packages, measurement history or Lovelace dashboards. These require your own entity configuration and are not created by HACS installation.
+All external sensors and helper inputs are selected explicitly in the configuration/options flow. No household sensor or helper name is required. This repository does not include personal `configuration.yaml` files, packages, measurement history or Lovelace dashboards. These require your own entity configuration and are not created by HACS installation.
 
 ## Development and validation
 
@@ -182,7 +178,7 @@ The included portable tests validate the thermal model without connecting to a p
 
 Synthetic-panel tests also exercise the real thermostat and fan command methods with delayed action responses, changed edit values and failed confirmations. Refreshes use only no-key requests; uncertain steps and commits are not replayed. The saved value must match the request, including the coordinator's separate readback. Passing synthetic tests does not establish hardware timing or verify an actual room/fan change on a controller.
 
-To check the live DHW scheduler in a Python environment containing Home Assistant Core **2026.10.2**, run `python script/validate_tuv_runtime.py`. This isolated check uses temporary storage, synthetic states and a command boundary that rejects every device write. It exercises real HA timer, state-change and coordinator callbacks, concurrent triggers and shutdown. It does not load a running HA instance or connect to a controller. Use `--component PATH` to validate an integration source directory outside this checkout.
+To check the live DHW scheduler in a Python environment containing Home Assistant Core **2026.10.4**, run `python script/validate_tuv_runtime.py`. This isolated check uses temporary storage, synthetic states and a command boundary that rejects every device write. It exercises real HA timer, state-change and coordinator callbacks, concurrent triggers and shutdown. It does not load a running HA instance or connect to a controller. Use `--component PATH` to validate an integration source directory outside this checkout.
 
 Run `python script/validate_tuv_observer.py` in the same environment to check incomplete-temperature handling, waiting-state sensor availability, preservation of learning and archives, recovery, scheduling races and diagnostic logging for unexpected failures. Missing T11/T12 values are never replaced with old readings or zero. This check also uses temporary storage and synthetic states without connecting to a controller.
 
@@ -219,3 +215,29 @@ Run `python script/validate_t15_options.py` in an environment containing Home As
 `switch.nilan_vp18_k_power` mirrors the physical panel ON/OFF keys and reports the main-screen operating state. ON resumes the controller's selected mode rather than selecting AUTO. The climate turn-on/off actions and the existing physical ON/OFF button entities use the same guarded, serialized and verified command path. Explicit climate mode selection still selects the requested mode. A fresh valid T15 input and the existing manual-control unlock are required. Unknown modes remain unknown; power state is never inferred from fan speed or electrical draw. Repeated requests for the already confirmed state send no additional ON/OFF key, and uncertain writes are not retried.
 
 The switch changes slowly and its history is useful, so it is not excluded from Recorder. No new high-frequency diagnostic attributes are added.
+
+## External inputs and migration
+
+Choose the primary T15 sensor and control-unlock input boolean during setup. The backup is optional. Options has three pages: room sensors/permissions/power, passive simulation, and night heating. Clearing an optional selector removes its previous mapping. T15 comes directly from the selected primary/backup input; the model never reads an installation-specific T15 mirror.
+
+The optional **measured total unit power** input accepts W or kW. It measures the whole unit, including fans and air heating, not DHW-only energy. Without a fresh valid measurement, the model uses an explicit **assumed 450 W** compressor-power prior; `power_quality`, `power_reason` and `power_w_used` expose this limitation. It is not metered electrical consumption.
+
+Unselected passive-simulation values use: night 03:00–05:00, daytime 13:00–15:00 (off), reserve 35%, upper minimum 45 °C, daily draw 120 l and requested margin 30 minutes (live readiness still enforces at least 120 minutes). An absent collection-enable input keeps collection off. An optional initialization input is only for existing package workflows.
+
+Version 2 configuration migration preserves the implicit legacy helper mappings of existing version 1 entries as explicit options, independently of whether helper integrations have loaded yet. Missing selected helpers remain unavailable and can be cleared in Options. Migration preserves configured room probes, explicit selector removals, unique IDs, model/shadow/filter stores and pending recovery journals. New installations have no household defaults. Entity IDs are assigned by HA; existing registry IDs remain stable.
+
+## Optional night DHW heating
+
+Select your enable input boolean, target input number (5–60 °C, step 1), two time-only input datetimes (15-minute boundaries), duration input number (minutes in multiples of 15), and price sensor under **Options → Night DHW heating**. Price attributes must map offset-aware ISO timestamps to finite numerical prices for every 15-minute slot in the entire allowed window. The displayed sensor state alone is insufficient. Use one currency/unit throughout; distribution/HDO restrictions are not inferred.
+
+Suggested initial settings: disabled, 55 °C, 01:00–05:00, 180 minutes. The duration is a user limit, not a completion guarantee. The planner chooses the equal-length contiguous block with minimum average price; equal prices prefer the later block. Midnight and both DST transitions use actual elapsed time. Incomplete prices prevent planning; late starts beyond 90 seconds are skipped.
+
+The enable helper is the explicit recurring opt-in. Manual control permission is required; if an automatic-permission helper is configured, it must also be on. An armed or unresolved live-delay control blocks night heating, and night heating blocks live-delay acquisition. Never enable both at once.
+
+Before heating, a fresh physical target is journaled and the existing verified compare/read/write path applies the raised target. A new valid T12 sample at or above the raised target ends the mode. The block deadline, disabling the helper, settings change, lost permission/data, reload or restart also requests restoration. A fresh physical comparison protects manual target changes. Recovery information is retained until confirmed or a different physical target is observed; failed/uncertain writes never trigger blind boost replay. A rejected acquisition clears its journal without restoring a target it never acquired. One night window is consumed once, including restarts and cancellation. The mode never lowers a normal target already at/above the requested boost.
+
+The device **DHW night heating** sensor exposes status, reason, plan, price unit, target/T12, original target while owned and pending restoration. With HA/gateway offline, the raised target may remain until recovery; there is no autonomous hardware timeout. Preserve the journal and control permission until restoration completes.
+
+Night heating changes only the compressor DHW target, without changing its maximum, electric heater, ventilation, air mode or unit power. CTS600 retains hysteresis, defrost and other protections; a continuous permission block does not promise uninterrupted compressor operation. Outside it, ordinary regulation applies. Thermal stock and existing ETA retain the saved normal target reference during a boost; the night target is reported separately. Controlled boost samples are excluded from passive thermostat qualification and delay-demand learning.
+
+Record enable/settings and the low-frequency status/history. Exclude duplicated full price curves and high-frequency diagnostic plans as appropriate for your Recorder policy. Personal packages, configuration and dashboards are supplied separately and are not part of HACS distribution.
