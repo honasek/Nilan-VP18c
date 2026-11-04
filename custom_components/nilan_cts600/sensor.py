@@ -3,6 +3,7 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, Sen
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.const import UnitOfTemperature
+from .tuv_sensor import async_model_entities
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -11,10 +12,33 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities = [CTS600Sensor(coordinator, key) for key in keys]
     entities += [CTS600Health(coordinator, "connection"), CTS600Health(coordinator, "diagnostics")]
     entities += [CTS600MenuSensor(coordinator,key) for key in ('alarms','weekly_schedule','menu_capabilities','controller_clock','alarm_history')]
-    from .tuv_sensor import async_model_entities
     entities += await async_model_entities(hass, coordinator)
     entities += [FilterMaintenanceSensor(coordinator._filter_runtime,key) for key in ('days_since','days_remaining')]
+    entities += [TUVNightSensor(coordinator._tuv_night_runtime)]
     async_add_entities(entities)
+
+
+class TUVNightSensor(CoordinatorEntity, SensorEntity):
+    _attr_has_entity_name = True
+    _attr_name = 'DHW night heating'
+    _attr_icon = 'mdi:water-boiler-auto'
+
+    def __init__(self, runtime):
+        super().__init__(runtime)
+        self._attr_unique_id = f'{runtime.main.entry.entry_id}-tuv-night-status'
+        self._attr_device_info = runtime.main.device_info
+
+    @property
+    def available(self):
+        return True
+
+    @property
+    def native_value(self):
+        return (self.coordinator.data or {}).get('status', 'disabled')
+
+    @property
+    def extra_state_attributes(self):
+        return {key:value for key,value in (self.coordinator.data or {}).items() if key != 'status'}
 
 
 class FilterMaintenanceSensor(CoordinatorEntity,SensorEntity):
@@ -26,7 +50,6 @@ class FilterMaintenanceSensor(CoordinatorEntity,SensorEntity):
     def __init__(self,runtime,key):
         super().__init__(runtime)
         self.key=key
-        self.entity_id=f'sensor.nilan_vp18_k_filter_{key}'
         self._attr_unique_id=f'{runtime.main.entry.entry_id}-filter-{key}'
         self._attr_name=f'{runtime.main.name} Filtr {"dny od údržby" if key=="days_since" else "zbývající dny"}'
         self._attr_device_info=runtime.main.device_info

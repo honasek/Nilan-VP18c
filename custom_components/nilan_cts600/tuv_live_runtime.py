@@ -13,9 +13,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.core import callback
 
 from .tuv_live import LiveControl, candidate
+from .entity_config import selected, is_on
 
 _LOGGER = logging.getLogger(__name__)
-AUTOMATIC_GATE = 'input_boolean.nilan_automatic_control_enabled'
 
 
 class TUVLiveRuntime(DataUpdateCoordinator):
@@ -44,8 +44,10 @@ class TUVLiveRuntime(DataUpdateCoordinator):
             _LOGGER.exception('DHW live-control journal could not be restored')
         self._unsub.append(self.main.async_add_listener(self._schedule))
         self._unsub.append(async_track_time_interval(self.hass, self._schedule, timedelta(seconds=30)))
-        self._unsub.append(async_track_state_change_event(
-            self.hass, [self.main.gate_entity, AUTOMATIC_GATE, 'input_boolean.nilan_tuv_shadow_enabled'], self._schedule))
+        config=getattr(self.main,'config',{})
+        watched=[value for value in (self.main.gate_entity,selected(config,'automatic_control_entity'),
+                 selected(config,'shadow_enabled_entity')) if value]
+        if watched:self._unsub.append(async_track_state_change_event(self.hass,watched,self._schedule))
         self._publish()
         self._schedule()
 
@@ -59,9 +61,12 @@ class TUVLiveRuntime(DataUpdateCoordinator):
         data = (runtime.data or {}) if runtime else {}
         actual = self.main.menu.values.get('dhw_temperature')
         target = self.control.forecast_target(actual)
-        return {'permitted': self.hass.states.is_state(self.main.gate_entity, 'on')
-                and self.hass.states.is_state(AUTOMATIC_GATE, 'on')
-                and self.hass.states.is_state('input_boolean.nilan_tuv_shadow_enabled', 'on')
+        config=getattr(self.main,'config',{})
+        night=getattr(self.main,'_tuv_night_runtime',None)
+        return {'permitted': is_on(self.hass,config,'commands_enabled_entity')
+                and is_on(self.hass,config,'automatic_control_entity')
+                and is_on(self.hass,config,'shadow_enabled_entity')
+                and not (night and (night.enabled or night.control.lease))
                 and self.main.t15_reading().valid,
                 'valid': bool(data.get('valid')) and self.main.last_update_success,
                 'sample_at': self.main.last_show_data_success,

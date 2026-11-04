@@ -8,13 +8,14 @@ from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import selector
 from homeassistant.util import dt as dt_util
-from .const import DOMAIN, DEFAULT_T15, DEFAULT_T15_BACKUP, DEFAULT_GATE, DEFAULT_MAX_AGE
+from .const import DOMAIN, DEFAULT_T15, DEFAULT_T15_BACKUP, DEFAULT_MAX_AGE
 from .t15_guard import configured_t15_sources, select_t15
+from .entity_config import OPTIONAL_FIELDS, SHADOW_FIELDS, NIGHT_FIELDS
 
 
 def _excluded_sources(hass, entry_id=None):
-    """The integration's own T15 and its legacy mirror cannot feed themselves."""
-    excluded = ["sensor.nilan_t15"]
+    """The integration's own registered T15 cannot feed itself after a rename."""
+    excluded = []
     if entry_id is not None:
         entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{entry_id}-sensor-T15")
         if entity_id:
@@ -22,7 +23,7 @@ def _excluded_sources(hass, entry_id=None):
     return excluded
 
 
-def _t15_errors(hass, primary, backup, excluded):
+def _t15_errors(hass, primary, backup, excluded, max_age=DEFAULT_MAX_AGE):
     errors = {}
     for field, entity_id in (("sensor_T15", primary), ("sensor_T15_backup", backup)):
         if entity_id is None and field == "sensor_T15_backup":
@@ -35,16 +36,6 @@ def _t15_errors(hass, primary, backup, excluded):
         errors["sensor_T15_backup"] = "duplicate_t15"
     if errors:
         return errors
-    max_age = DEFAULT_MAX_AGE
-    threshold = hass.states.get("input_number.nilan_t15_max_age_minutes")
-    if threshold is not None:
-        try:
-            minutes = float(threshold.state)
-            if not 1 <= minutes <= 60:
-                raise ValueError("Invalid T15 age threshold")
-            max_age = minutes * 60
-        except (TypeError, ValueError):
-            return {"sensor_T15": "invalid_t15"}
     _, reading = select_t15(hass.states.get, primary, backup, dt_util.utcnow(), max_age)
     if not reading.valid:
         errors["sensor_T15"] = "invalid_t15"
@@ -52,7 +43,7 @@ def _t15_errors(hass, primary, backup, excluded):
 
 
 class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    VERSION = 2
 
     @staticmethod
     @callback
@@ -82,27 +73,20 @@ class CTS600ConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 # No test frame is sent by this form. Entry setup starts emulation.
                 return self.async_create_entry(title=data["name"], data=data)
-        host_helper = self.hass.states.get("input_text.nilan_gateway_host")
-        host_default = host_helper.state if host_helper and host_helper.state not in ("unknown", "unavailable") else ""
-        port_helper = self.hass.states.get("input_number.nilan_gateway_port")
-        try:
-            port_default = int(float(port_helper.state)) if port_helper else 4196
-        except (TypeError, ValueError):
-            port_default = 4196
         schema = vol.Schema({
-            vol.Required("name", default="Nilan VP18 K"): str,
-            vol.Required("host", default=host_default): str,
-            vol.Required("tcp_port", default=port_default): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
-            vol.Required("sensor_T15", default=DEFAULT_T15): selector({"entity": {"filter": {"domain": "sensor"}}}),
-            vol.Optional("sensor_T15_backup", default=DEFAULT_T15_BACKUP): selector({"entity": {"filter": {"domain": "sensor"}}}),
-            vol.Required("commands_enabled_entity", default=DEFAULT_GATE): selector({"entity": {"filter": {"domain": "input_boolean"}}}),
+            vol.Required("name", default="Nilan CTS600"): str,
+            vol.Required("host"): str,
+            vol.Required("tcp_port", default=4196): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+            vol.Required("sensor_T15"): selector({"entity": {"filter": {"domain": "sensor"}}}),
+            vol.Optional("sensor_T15_backup"): selector({"entity": {"filter": {"domain": "sensor"}}}),
+            vol.Required("commands_enabled_entity"): selector({"entity": {"filter": {"domain": "input_boolean"}}}),
             vol.Required("panel_disconnected", default=False): bool,
         })
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
 
 class CTS600OptionsFlow(OptionsFlowWithReload):
-    """Change room probes without deleting the entry or changing gateway settings."""
+    """Select external inputs without requiring any particular household IDs."""
 
     async def async_step_init(self, user_input=None):
         excluded = _excluded_sources(self.hass, self.config_entry.entry_id)
@@ -110,18 +94,19 @@ class CTS600OptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             primary = user_input.get("sensor_T15")
             backup = user_input.get("sensor_T15_backup") or None
-            errors = _t15_errors(self.hass, primary, backup, excluded)
+            errors = _t15_errors(self.hass, primary, backup, excluded,
+                                 user_input.get('t15_max_age_seconds',DEFAULT_MAX_AGE))
             if not errors:
-                # Explicit None masks the old data value: clearing an optional
-                # selector must not silently restore a previously saved backup.
-                return self.async_create_entry(title="", data={
-                    **self.config_entry.options, "sensor_T15": primary, "sensor_T15_backup": backup,
-                })
-            suggested = {"sensor_T15": primary, "sensor_T15_backup": backup}
+                self._pending={**self.config_entry.options,**user_input,'sensor_T15_backup':backup}
+                for key in ('power_entity','service_control_entity','automatic_control_entity','t15_max_age_entity'):
+                    self._pending[key]=user_input.get(key) or None
+                return await self.async_step_shadow()
+            suggested = dict(user_input)
         else:
             primary, backup = configured_t15_sources(
                 self.config_entry.data, self.config_entry.options, DEFAULT_T15, DEFAULT_T15_BACKUP)
-            suggested = {"sensor_T15": primary, "sensor_T15_backup": backup}
+            suggested = {**self.config_entry.data,**self.config_entry.options,
+                         'sensor_T15':primary,'sensor_T15_backup':backup}
         schema = vol.Schema({
             vol.Required("sensor_T15"): selector({"entity": {
                 "filter": {"domain": "sensor"}, "exclude_entities": excluded,
@@ -129,6 +114,29 @@ class CTS600OptionsFlow(OptionsFlowWithReload):
             vol.Optional("sensor_T15_backup"): selector({"entity": {
                 "filter": {"domain": "sensor"}, "exclude_entities": excluded,
             }}),
+            vol.Required('commands_enabled_entity'): selector({'entity':{'filter':{'domain':'input_boolean'}}}),
+            vol.Required('t15_max_age_seconds',default=DEFAULT_MAX_AGE): vol.All(vol.Coerce(int),vol.Range(min=60,max=3600)),
+            **{vol.Optional(key):selector({'entity':{'filter':{'domain':OPTIONAL_FIELDS[key]}}})
+               for key in ('power_entity','service_control_entity','automatic_control_entity','t15_max_age_entity')},
         })
         return self.async_show_form(step_id="init", data_schema=self.add_suggested_values_to_schema(
             schema, {key: value for key, value in suggested.items() if value is not None}), errors=errors)
+
+    async def _selectors(self,step,fields,user_input,next_step=None):
+        if user_input is not None:
+            self._pending.update({key:user_input.get(key) or None for key in fields})
+            if next_step:return await next_step()
+            return self.async_create_entry(title='',data=self._pending)
+        suggested={**self.config_entry.data,**self.config_entry.options,**self._pending}
+        schema=vol.Schema({vol.Optional(key):selector({'entity':{'filter':{'domain':domain}}})
+                           for key,domain in fields.items()})
+        return self.async_show_form(step_id=step,data_schema=self.add_suggested_values_to_schema(
+            schema,{key:suggested[key] for key in fields if suggested.get(key)}))
+
+    async def async_step_shadow(self,user_input=None):
+        fields={f'shadow_{key}_entity':domain for key,domain in SHADOW_FIELDS.items()}
+        fields['shadow_initialized_entity']='input_boolean'
+        return await self._selectors('shadow',fields,user_input,self.async_step_night)
+
+    async def async_step_night(self,user_input=None):
+        return await self._selectors('night',NIGHT_FIELDS,user_input)

@@ -12,7 +12,6 @@ class FilterMaintenanceDate(CoordinatorEntity,DateEntity):
 
     def __init__(self,runtime):
         super().__init__(runtime)
-        self.entity_id='date.nilan_vp18_k_filter_last_maintenance'
         self._attr_unique_id=f'{runtime.main.entry.entry_id}-filter-last-maintenance'
         self._attr_name=f'{runtime.main.name} Filtr poslední údržba v HA'
         self._attr_device_info=runtime.main.device_info

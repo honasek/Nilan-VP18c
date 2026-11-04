@@ -15,6 +15,8 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
+from .entity_config import SHADOW_FIELDS, selected
 
 from .panel_indicators import indicators
 from .tuv_model import ThermalObserver, Sample, finite
@@ -26,25 +28,16 @@ from dataclasses import asdict
 from statistics import median
 
 _LOGGER=logging.getLogger(__name__)
-SHADOW_HELPERS={
-    'enabled':'input_boolean.nilan_tuv_shadow_enabled',
-    'day_enabled':'input_boolean.nilan_tuv_shadow_day_window_enabled',
-    'window_start':'input_datetime.nilan_tuv_shadow_window_start',
-    'window_end':'input_datetime.nilan_tuv_shadow_window_end',
-    'day_start':'input_datetime.nilan_tuv_shadow_day_start',
-    'day_end':'input_datetime.nilan_tuv_shadow_day_end',
-    'reserve_pct':'input_number.nilan_tuv_shadow_reserve_pct',
-    'top_min_c':'input_number.nilan_tuv_shadow_top_min_c',
-    'prior_daily_l':'input_number.nilan_tuv_shadow_prior_daily_l',
-    'margin_min':'input_number.nilan_tuv_shadow_margin_min',
-}
-SHADOW_INITIALIZED='input_boolean.nilan_tuv_shadow_initialized'
 
 
 class TUVRuntime(DataUpdateCoordinator):
     def __init__(self,hass,main):
         super().__init__(hass,_LOGGER,name=f'{main.name} TUV model',config_entry=main.entry,update_interval=None)
         self.main=main
+        config=getattr(main,'config',{})
+        self.helpers={key:selected(config,f'shadow_{key}_entity') for key in SHADOW_FIELDS}
+        self.initialized=selected(config,'shadow_initialized_entity')
+        self._timezone=dt_util.get_default_time_zone()
         self.model=ThermalObserver()
         self.store=Store(hass,1,f'nilan_cts600.{main.entry.entry_id}.tuv_model')
         self.identity={key:main.data.get(key) for key in ('unit_type','software_1')}
@@ -72,6 +65,7 @@ class TUVRuntime(DataUpdateCoordinator):
         self.shadow_error=None
 
     async def async_start(self):
+        self._timezone=await dt_util.async_get_time_zone(self.hass.config.time_zone)
         stored=None
         try:
             stored=await self.store.async_load()
@@ -112,7 +106,8 @@ class TUVRuntime(DataUpdateCoordinator):
             _LOGGER.warning('TUV: hysterezi nelze obnovit; pokračuje pasivní měření',exc_info=True)
         self._unsub.append(self.main.async_add_listener(self._schedule))
         self._unsub.append(async_track_time_interval(self.hass,self._timer,timedelta(seconds=60)))
-        self._unsub.append(async_track_state_change_event(self.hass,[*SHADOW_HELPERS.values(),SHADOW_INITIALIZED],self._shadow_changed))
+        watched=[value for value in [*self.helpers.values(),self.initialized] if value]
+        if watched:self._unsub.append(async_track_state_change_event(self.hass,watched,self._shadow_changed))
         self._stop_unsub=self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP,self._stop_event)
         self._schedule()
         if self._task is not None:await self._task
@@ -124,11 +119,12 @@ class TUVRuntime(DataUpdateCoordinator):
     def _shadow_changed(self,event):self._schedule()
 
     def _shadow_settings(self):
-        if not self.hass.states.is_state(SHADOW_INITIALIZED,'on'):
+        if self.initialized and not self.hass.states.is_state(self.initialized,'on'):
             return Settings(enabled=False),'Čekám na inicializaci nastavení shadow'
-        values={'timezone':self.hass.config.time_zone}
+        values={'timezone':self.hass.config.time_zone,'enabled':False}
         try:
-            for key,entity_id in SHADOW_HELPERS.items():
+            for key,entity_id in self.helpers.items():
+                if not entity_id:continue
                 state=self.hass.states.get(entity_id)
                 if state is None or state.state in ('unknown','unavailable') or state.attributes.get('restored'):
                     raise ValueError('Nastavení shadow není dostupné')
@@ -137,7 +133,7 @@ class TUVRuntime(DataUpdateCoordinator):
                     values[key]=state.state=='on'
                 elif key in ('window_start','window_end','day_start','day_end'):values[key]=state.state[:5]
                 else:values[key]=float(state.state)
-            return Settings(**values).validate(),None
+            return Settings(**values).validate(self._timezone),None
         except (ValueError,TypeError,KeyError) as exc:return Settings(enabled=False),str(exc)
 
     def _shadow_signature(self,settings,error):
@@ -185,7 +181,8 @@ class TUVRuntime(DataUpdateCoordinator):
             self._task=self.hass.async_create_task(self._step(),f'Nilan TUV observer {self.main.entry.entry_id}')
 
     def _power(self,at):
-        state=self.hass.states.get('sensor.rekuperace_vykon')
+        entity_id=selected(getattr(self.main,'config',{}),'power_entity')
+        state=self.hass.states.get(entity_id) if entity_id else None
         reported=getattr(state,'last_reported',None)
         return self.power_tracker.choose(getattr(state,'state',None),state.attributes.get('unit_of_measurement') if state else None,
                                          reported.timestamp() if reported else None,at,
@@ -214,6 +211,8 @@ class TUVRuntime(DataUpdateCoordinator):
         raw=getattr(getattr(self.main,'menu',None),'values',{}).get('dhw_temperature')
         live=getattr(self.main,'_tuv_live_runtime',None)
         if live is not None:raw=live.control.forecast_target(raw)
+        night=getattr(self.main,'_tuv_night_runtime',None)
+        if night is not None:raw=night.control.reference_target(raw)
         try:target=float(raw) if not isinstance(raw,bool) else None
         except (TypeError,ValueError):target=None
         if not finite(target) or not 5<=target<=60:target=None
@@ -260,7 +259,8 @@ class TUVRuntime(DataUpdateCoordinator):
 
     def _shadow_sync(self,settings,error,result,observe):
         try:
-            if observe and error is None and settings.enabled:
+            night=getattr(self.main,'_tuv_night_runtime',None)
+            if observe and error is None and settings.enabled and not (night and night.control.lease):
                 self.shadow.observe(self.model,result.get('eta_target_c'),settings)
                 self.shadow.register_eta(self.model,result)
             signature=self._shadow_signature(settings,error)
@@ -290,7 +290,8 @@ class TUVRuntime(DataUpdateCoordinator):
         record=None
         if result is not None:
             live=getattr(self.main,'_tuv_live_runtime',None)
-            self.thermostat.observe(sample,key[1],inhibited=bool(live and live.control.lease))
+            night=getattr(self.main,'_tuv_night_runtime',None)
+            self.thermostat.observe(sample,key[1],inhibited=bool((live and live.control.lease) or (night and night.control.lease)))
             result={**result,**self._forecast_sync(key)}
             result['shadow'],record=self._shadow_sync(settings,error,result,True)
         return result,self.model.dump(),record
@@ -360,8 +361,10 @@ class TUVRuntime(DataUpdateCoordinator):
                 'sample':asdict(sample),'target_c':result.get('eta_target_c'),
                 'soc':result['soc'],'lower':result['lower'],'upper':result['upper'],
                 'stock_reference_c':result.get('full_c'),
-                'thermostat_inhibited':bool(getattr(getattr(self.main,'_tuv_live_runtime',None),'control',None)
-                                           and self.main._tuv_live_runtime.control.lease),
+                'thermostat_inhibited':any(bool(getattr(getattr(self.main,name,None),'control',None)
+                                               and getattr(self.main,name).control.lease)
+                                           for name in ('_tuv_live_runtime','_tuv_night_runtime')),
+                'actual_target_c':getattr(getattr(self.main,'menu',None),'values',{}).get('dhw_temperature'),
                 'draw_l_min_model':median(p.draw_l_min for p in self.model.particles) if self.model.active_draw else 0,
                 'draw_probability_model':self.model.draw_probability,'drawing_model':self.model.active_draw,
                 'plan_issued_at':result.get('shadow',{}).get('issued_at'),'shadow_version':SIMULATION_VERSION})
