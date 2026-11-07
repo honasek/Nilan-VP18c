@@ -49,7 +49,7 @@ class TUVNightRuntime(DataUpdateCoordinator):
         self._unsub.append(self.main.async_add_listener(self._schedule))
         self._unsub.append(async_track_time_interval(self.hass, self._schedule, timedelta(seconds=15)))
         watched = [selected(self.main.config, key) for key in
-                   (*NIGHT_FIELDS, 'automatic_control_entity', 'commands_enabled_entity')]
+                   (*NIGHT_FIELDS, 'commands_enabled_entity')]
         if any(watched):
             self._unsub.append(async_track_state_change_event(self.hass, [v for v in watched if v], self._schedule))
         self._publish(self._context())
@@ -85,9 +85,9 @@ class TUVNightRuntime(DataUpdateCoordinator):
     def _context(self):
         now = time.time()
         live = getattr(self.main, '_tuv_live_runtime', None)
-        automatic = selected(self.main.config, 'automatic_control_entity')
+        # The night helper is this mode's recurring permission. The separate
+        # automatic-control permission belongs to live DHW delay.
         permitted = (is_on(self.hass, self.main.config, 'commands_enabled_entity')
-                     and (not automatic or is_on(self.hass, self.main.config, 'automatic_control_entity'))
                      and self.main.t15_reading().valid
                      and not (live and (live.control.enabled or live.control.lease)))
         at = self.main.last_show_data_success
@@ -161,7 +161,7 @@ class TUVNightRuntime(DataUpdateCoordinator):
             'target_c': context.get('target'), 't12_c': context.get('bottom'),
             'original_target_c': self.control.lease['target'] if self.control.lease else None,
             'pending_restore': self.control.lease is not None and self.control.status == 'restore_pending',
-            'outcome': self.control.outcome})
+            'outcome': self.control.outcome, 'last_run': self.control.last_result()})
 
     async def async_shutdown(self):
         if self._closed:

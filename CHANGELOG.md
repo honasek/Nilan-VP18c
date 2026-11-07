@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026.11.7.0
+
+- Read refreshed LCD frames during menu navigation, value changes and readback. Verify each numeric step; never repeat an uncertain edit or commit.
+- Retry only bounded read/navigation and retain the failed phase, setting and display.
+- Persist the last completed night result independently of next-night planning, preserving the first command error and legacy journal ownership/window semantics.
+- Expose the durable result through the existing status sensor so dashboards and external history templates can retain the last-night outcome.
+
+## 2026.11.5.0
+
+- Use the recurring night-enable helper as night DHW permission independently of the live-delay automatic-control helper. Keep the shared control unlock, T15, telemetry, mutual exclusion and durable recovery guards.
+- Document restoring external helper settings across restarts and validate the independent night permission with the native HA adapter.
+
 ## 2026.11.4.0
 
 - Add an opt-in cheapest contiguous night DHW target boost with configurable helper inputs, T12 completion, durable restore and mutual exclusion with live delay.

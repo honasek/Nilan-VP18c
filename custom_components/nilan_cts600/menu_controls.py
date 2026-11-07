@@ -28,6 +28,26 @@ class MenuControls:
         self.clock = None
         self.alarm_history = None
 
+    def _poll(self, *, previous=None, accept=None, settle=False):
+        """Request display updates, never replay a possibly applied keypress.
+
+        key() responses can contain the OLD LCD registers. Three NONE requests
+        give delayed frames a bounded chance to arrive. A menu endpoint may
+        legitimately stay unchanged; an edit must satisfy its exact predicate.
+        """
+        display = None
+        for _ in range(3):
+            display = self.panel.key(Key.NONE)
+            if not settle and (accept(display) if accept else display != previous):
+                return display
+        if accept and not accept(display):
+            raise MenuWriteError(f'Čerstvé čtení nepotvrdilo očekávaný stav: {display!r}')
+        return display
+
+    def _reset(self):
+        self.panel.resetMenu()
+        self._poll(settle=True)
+
     def read_profile(self):
         """Inspect top menus and controller clock without entering edit mode."""
         self.panel.resetMenu()
@@ -87,31 +107,49 @@ class MenuControls:
             return bool(re.fullmatch(r"\d{2}-\d{2}-\d{2}/[A-Z]{2,3}\.?\s*\d{2}[.:]\d{2}", fold_display(clean)))
         return canonical(clean) in {canonical(alias) for alias in aliases}
 
-    def _find(self, predicate, limit=64):
-        display = self.panel.display()
+    def _find(self, predicate, limit=64, *, label='menu item'):
+        display = self._poll()
         if predicate(display):
             return display
         for direction in (Key.DOWN, Key.UP):
             seen = {display}
             for _ in range(limit):
-                display = self.panel.key(direction)
+                before = display
+                self.panel.key(direction)
+                display = self._poll(previous=before)
                 if predicate(display):
                     return display
                 if display in seen:
                     break
                 seen.add(display)
-        raise MenuUnavailable("Požadovaná položka není v tomto menu dostupná")
+        raise MenuUnavailable(f'Požadovaná položka není v tomto menu dostupná: {label}; display={display!r}')
 
     def enter_path(self, path):
-        self.panel.resetMenu()
+        self._reset()
         for aliases in path:
-            self._find(lambda text:self._path_match(text, aliases))
+            self._find(lambda text:self._path_match(text, aliases), label='/'.join(aliases))
+            before = self.panel.display()
             self.panel.key(Key.ENTER)
+            self._poll(previous=before)
 
     def locate(self, spec):
-        self.enter_path(spec.path)
-        self._find(lambda text:spec.parse(text)[0])
-        return spec.parse(self.panel.display())[1]
+        # Navigation may be restarted once, including after a commit. This
+        # repeats only reads/navigation, NEVER edit/step/commit or the boost.
+        for attempt in range(2):
+            try:
+                self.enter_path(spec.path)
+                self._find(lambda text:spec.parse(text)[0] and '{' not in text and '}' not in text,
+                           label=spec.key)
+                return spec.parse(self.panel.display())[1]
+            except MenuUnavailable:
+                if attempt:raise
+                # A stale reset can leave the panel one level too deep.
+                # Verified ESC navigation does not change a saved setting.
+                for _ in range(3):
+                    before = self._poll()
+                    self.panel.key(Key.ESC)
+                    after = self._poll(previous=before)
+                    if before == after:break
 
     def read(self, key):
         spec = BY_KEY[key]
@@ -153,8 +191,8 @@ class MenuControls:
         self.panel.resetMenu()
         return result
 
-    def _editing(self, spec):
-        display = self.panel.display()
+    def _editing(self, spec, display=None):
+        display = self.panel.display() if display is None else display
         matched, value = spec.parse(display)
         blink = re.search(r"\{([^{}]+)\}", display)
         if not matched or blink is None:
@@ -169,25 +207,37 @@ class MenuControls:
             raise MenuWriteError("Bliká jiná položka než požadovaná hodnota")
         return value
 
+    def _read_edit(self, spec, *, expected=None, previous=None):
+        def accept(display):
+            try:value = self._editing(spec, display)
+            except MenuWriteError:return False
+            if expected is not None and value != expected:
+                if previous is not None and value != previous:
+                    raise MenuWriteError(f'Neočekávaný krok {spec.key}: {previous!r} -> {value!r}')
+                return False
+            return (previous is None or value != previous) if expected is None else True
+        self._poll(accept=accept)
+        return self._editing(spec)
+
     def _cancel(self):
         self.panel.key(Key.ESC)
         self.panel.resetMenu()
 
     def _begin_edit(self, spec, original):
         self.panel.key(Key.ENTER)
-        display = self.panel.display()
+        display = self._poll(settle=True)
         # Some documented menus need two ENTER presses. A second press is allowed
         # only on the same unchanged value with no blinking field anywhere.
         if '{' not in display and '}' not in display and spec.parse(display) == (True, original):
             self.panel.key(Key.ENTER)
         try:
-            self._editing(spec)
+            self._read_edit(spec)
         except MenuWriteError:
             self._cancel()
             raise
 
     def _move_to(self, spec, target):
-        current = self._editing(spec)
+        current = self._read_edit(spec)
         if current == target:
             return
         # Numeric direction is observed from values. Enums are searched in both directions.
@@ -199,8 +249,14 @@ class MenuControls:
         for direction in directions:
             seen = {current}
             for _ in range(limit):
+                before = current
                 self.panel.key(direction)
-                current = self._editing(spec)
+                expected = (before + (1 if direction == Key.UP else -1)
+                            if spec.kind == 'number' and before != 'OFF' and target != 'OFF' else None)
+                try:current = self._read_edit(spec, expected=expected, previous=before)
+                except MenuWriteError:
+                    self._cancel()
+                    raise
                 if current == target:
                     return
                 if current in seen:
@@ -216,23 +272,33 @@ class MenuControls:
 
     def _apply(self,spec,target):
         key=spec.key
-        previous = self.locate(spec)
-        if previous == target:
-            self.values[key] = previous
-            self.panel.resetMenu()
-            return previous
-        self._begin_edit(spec, previous)
-        self._move_to(spec, target)
-        # Set no optimistic value before commit AND a separate navigation/readback.
-        self.panel.key(Key.ENTER)
-        confirmed = self.locate(spec)
-        if confirmed != target:
-            self.panel.resetMenu()
-            raise MenuWriteError(f"Zápis {key} nebyl potvrzen čtením: {confirmed!r}")
-        self.values[key] = confirmed
-        if key=='weekly_program':self.weekly_slots={}
-        self.panel.resetMenu()
-        return confirmed
+        phase='navigate';commit_attempted=False
+        try:
+            previous = self.locate(spec)
+            if previous == target:
+                self.values[key] = previous
+                self._reset()
+                return previous
+            phase='enter_edit';self._begin_edit(spec, previous)
+            phase='edit_value';self._move_to(spec, target)
+            self._read_edit(spec, expected=target)
+            # Set no optimistic value before commit AND separate fresh readback.
+            phase='commit';commit_attempted=True
+            self.panel.key(Key.ENTER)
+            self._poll(settle=True)
+            phase='readback';confirmed = self.locate(spec)
+            if confirmed != target:
+                self._reset()
+                raise MenuWriteError(f'Zápis {key} nebyl potvrzen čtením: {confirmed!r}')
+            self.values[key] = confirmed
+            if key=='weekly_program':self.weekly_slots={}
+            self._reset()
+            return confirmed
+        except Exception as exc:
+            if not commit_attempted and phase in ('enter_edit','edit_value'):
+                try:self._cancel()
+                except Exception:pass  # Recovery journal still owns uncertainty.
+            raise MenuWriteError(f'{key} phase={phase} commit_attempted={commit_attempted}: {exc}; display={self.panel.display()!r}') from exc
 
     def set_language(self,language):
         spec=MenuSetting('panel_language','Panel language',(),

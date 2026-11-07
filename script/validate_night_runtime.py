@@ -59,6 +59,26 @@ async def validate(component):
         now=time.time()
         selected={'window_start':now-900,'window_end':now+14400,'start':now-1,'end':now+10800,'average_price':1.0}
         with patch.object(module,'plan',return_value=(selected,None)):
+            # Automatic-control permission belongs to live delay, not night.
+            for value in ('off','on','unknown','unavailable'):
+                hass.states.async_set(main.config['automatic_control_entity'],value)
+                assert runtime._context()['permitted'];checks+=1
+            hass.states.async_remove(main.config['automatic_control_entity'])
+            assert runtime._context()['permitted'];checks+=1
+            hass.states.async_set(main.config['automatic_control_entity'],'off')
+            hass.states.async_set(main.config['commands_enabled_entity'],'off')
+            assert not runtime._context()['permitted'];checks+=1
+            hass.states.async_set(main.config['commands_enabled_entity'],'on')
+            main.t15_reading=lambda:SimpleNamespace(valid=False)
+            assert not runtime._context()['permitted'];checks+=1
+            main.t15_reading=lambda:SimpleNamespace(valid=True,value=21)
+            sample=main.last_show_data_success
+            main.last_show_data_success=time.time()-181
+            assert not runtime._context()['valid'];checks+=1
+            main.last_show_data_success=sample
+            main._tuv_live_runtime.control.lease={'pending':True}
+            assert not runtime._context()['permitted'];checks+=1
+            main._tuv_live_runtime.control.lease=None
             await runtime.async_start()
             assert HassJob(runtime._schedule).job_type is HassJobType.Callback;checks+=1
             await runtime._task
@@ -66,6 +86,10 @@ async def validate(component):
             hass.states.async_set(main.config['night_enabled_entity'],'on')
             await hass.async_block_till_done()
             assert physical['target']==55 and runtime.control.status=='heating';checks+=1
+            for value in ('on','off'):
+                hass.states.async_set(main.config['automatic_control_entity'],value)
+                await runtime._tick()
+                assert physical['target']==55 and runtime.control.status=='heating' and len(writes)==1;checks+=1
             # The stock/ETA target remains normal during a temporary boost.
             model=model_module.TUVRuntime(hass,main)
             assert model._forecast_key()[1]==50;checks+=1
@@ -87,6 +111,9 @@ async def validate(component):
             hass.states.async_set(main.config['night_enabled_entity'],'off')
             await recovery.async_start();await recovery._task
             assert recovery.control.consumed_until==selected['window_end'] and not recovery.control.lease;checks+=1
+            hass.states.async_set(main.config['night_enabled_entity'],'on')
+            await hass.async_block_till_done()
+            assert recovery.control.status=='finished' and len(writes)==2;checks+=1
             await recovery.async_shutdown()
             await model.async_shutdown()
         # Read-only model works with no external helpers and arbitrary entity names.
