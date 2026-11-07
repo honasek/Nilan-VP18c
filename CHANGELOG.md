@@ -5,7 +5,7 @@
 - Read refreshed LCD frames during menu navigation, value changes and readback. Verify each numeric step; never repeat an uncertain edit or commit.
 - Retry only bounded read/navigation and retain the failed phase, setting and display.
 - Persist the last completed night result independently of next-night planning, preserving the first command error and legacy journal ownership/window semantics.
-- Expose the durable result through the existing status and history sensors; render it on both night cards.
+- Expose the durable result through the existing status sensor so dashboards and external history templates can retain the last-night outcome.
 
 ## 2026.11.5.0
 
