@@ -74,10 +74,11 @@ class NightControl:
         self.status = 'disabled'
         self.reason = 'disabled'
         self.outcome = None
+        self.last_run = None
 
     def dump(self):
         return {'lease': deepcopy(self.lease), 'consumed_until': self.consumed_until,
-                'outcome': self.outcome}
+                'outcome': self.outcome, 'last_run': deepcopy(self.last_run)}
 
     def restore(self, data):
         if not isinstance(data, dict) or not finite(data.get('consumed_until')) or data['consumed_until'] < 0:
@@ -97,36 +98,73 @@ class NightControl:
         self.lease = deepcopy(lease)
         self.consumed_until = data['consumed_until']
         self.outcome = data.get('outcome') if isinstance(data.get('outcome'), str) else None
+        saved = data.get('last_run')
+        # Optional history must never prevent restoration of an owned target.
+        self.last_run = None
+        if isinstance(saved, dict) and isinstance(saved.get('outcome'), str):
+            self.last_run = {key: (value[:500] if isinstance(value, str) else value)
+                             for key,value in saved.items()
+                             if key in ('start','end','window_start','window_end','attempted_at','finished_at',
+                                        'target_c','original_target_c','start_t12_c','end_t12_c','outcome','error')
+                             and (value is None or isinstance(value,str) or finite(value))}
+        if not self.last_run and self.outcome and self.consumed_until:
+            self.last_run={'outcome':self.outcome,'window_end':self.consumed_until}
         self.recovering = bool(lease)
+
+    def last_result(self):
+        if self.last_run:return deepcopy(self.last_run)
+        if self.outcome and self.consumed_until:
+            return {'outcome':self.outcome,'window_end':self.consumed_until}
+        return None
+
+    def _result(self, reason, now, context, lease=None):
+        context=context or {};source=lease or context.get('plan') or {}
+        result={key:source.get(key) for key in ('start','end','window_start','window_end')}
+        fresh=bool(context.get('valid') and finite(context.get('sample_at')) and
+                   finite(now) and -5<=now-context['sample_at']<=180)
+        result.update(outcome=reason,attempted_at=source.get('attempted_at'),finished_at=now,
+                      target_c=source.get('applied',context.get('target')),
+                      original_target_c=source.get('target',context.get('actual_target')),
+                      start_t12_c=source.get('start_t12_c'),
+                      end_t12_c=context.get('bottom') if fresh and finite(context.get('bottom')) else None,
+                      error=(str(source.get('failure_reason') or context.get('error'))[:500]
+                             if source.get('failure_reason') or context.get('error') else None))
+        return result
 
     def reference_target(self, actual):
         if self.lease and actual in (self.lease['applied'], self.lease['target']):
             return self.lease['target']
         return actual
 
-    async def release(self, reason):
+    async def release(self, reason, now=None, context=None):
         lease = self.lease
         matched = await self.send(lease['applied'], lease['target'], True)
         self.lease = None
         self.outcome = reason if matched else 'manual_override_or_already_restored'
+        previous=self.last_run
+        self.last_run=self._result(self.outcome,now,context,lease)
         try:
             await self.save(self.dump())
         except Exception:
             self.lease = lease
+            self.last_run=previous
             raise
         self.recovering = False
         self.status, self.reason = 'finished', self.outcome
 
-    async def abandon(self, reason):
+    async def abandon(self, reason, now=None, context=None):
         """A rejected compare never acquired the target, so it cannot restore it."""
         lease = self.lease
         lease['cancelled_before_write'] = True
         self.lease = None
         self.outcome = reason
+        previous=self.last_run
+        self.last_run=self._result(reason,now,context,lease)
         try:
             await self.save(self.dump())
         except Exception:
             self.lease = lease
+            self.last_run=previous
             raise
         self.recovering = False
         self.status, self.reason = 'finished', reason
@@ -135,7 +173,7 @@ class NightControl:
         try:
             if self.lease:
                 if self.lease.get('cancelled_before_write'):
-                    await self.abandon('target_changed_before_start')
+                    await self.abandon('target_changed_before_start',now,context)
                     return
                 reason = None
                 if self.recovering: reason = 'recovered_after_restart_or_error'
@@ -149,7 +187,7 @@ class NightControl:
                     reason = 'target_reached'
                 if reason:
                     self.status, self.reason = 'restore_pending', reason
-                    await self.release(reason)
+                    await self.release(reason,now,context)
                 else:
                     self.status, self.reason = 'heating', 'boost_target_active'
                 return
@@ -176,12 +214,14 @@ class NightControl:
             elif not finite(context.get('bottom')) or context['bottom'] >= target: reason = 'already_reached'
             if reason:
                 self.outcome = reason
+                self.last_run=self._result(reason,now,context)
                 await self.save(self.dump())
                 self.status, self.reason = 'finished', reason
                 return
             self.lease = {key: selected[key] for key in ('start', 'end', 'window_start', 'window_end')}
             self.lease.update(target=original, applied=target, sample_at=context['sample_at'],
-                              settings_key=context.get('settings_key'))
+                              settings_key=context.get('settings_key'),attempted_at=now,
+                              start_t12_c=context.get('bottom'))
             self.outcome = None
             try:
                 await self.save(self.dump())
@@ -189,10 +229,15 @@ class NightControl:
                 self.lease = None
                 raise
             if not await self.send(original, target, False):
-                await self.abandon('target_changed_before_start')
+                await self.abandon('target_changed_before_start',now,context)
                 return
             self.status, self.reason = 'heating', 'boost_target_active'
         except Exception as exc:
             self.recovering = bool(self.lease)
             self.status = 'restore_pending' if self.lease else 'error'
             self.reason = str(exc)
+            if self.lease:
+                # Retain the first failure across reconnect/restart and recovery.
+                self.lease.setdefault('failure_reason',str(exc)[:500])
+                try:await self.save(self.dump())
+                except Exception:pass  # Existing ownership remains for safe recovery.
