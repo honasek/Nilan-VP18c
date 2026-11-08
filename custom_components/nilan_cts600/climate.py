@@ -13,7 +13,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class CTS600Climate(CoordinatorEntity, ClimateEntity):
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = 5
     _attr_max_temp = 30
     _attr_target_temperature_step = 1
@@ -39,13 +39,19 @@ class CTS600Climate(CoordinatorEntity, ClimateEntity):
         return self._modes.get((self.coordinator.data or {}).get("mode"))
 
     @property
-    def target_temperature(self):
+    def native_target_temperature(self):
         return (self.coordinator.data or {}).get("thermostat")
 
     @property
-    def current_temperature(self):
+    def native_current_temperature(self):
         reading = self.coordinator.t15_reading()
         return reading.value if reading.valid else None
+
+    # HA before 2026.11 reads the old names; newer HA must not override them.
+    if not hasattr(ClimateEntity, "native_temperature_unit"):
+        _attr_temperature_unit = _attr_native_temperature_unit
+        current_temperature = native_current_temperature
+        target_temperature = native_target_temperature
 
     @property
     def fan_mode(self):

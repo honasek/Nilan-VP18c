@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026.11.8.0
+
+- Use the native temperature properties for climate, DHW, compressor and auxiliary heater entities on Home Assistant 2026.11 and newer, removing the startup deprecation warnings before the old API is removed in 2027.11.
+- Retain legacy aliases only on older Home Assistant versions. Keep entity identities, state attributes, probes and temperature commands unchanged.
+
 ## 2026.11.7.0
 
 - Read refreshed LCD frames during menu navigation, value changes and readback. Verify each numeric step; never repeat an uncertain edit or commit.

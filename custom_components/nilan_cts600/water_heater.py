@@ -16,7 +16,7 @@ async def async_setup_entry(hass,entry,async_add_entities):
 
 class CTS600WaterHeater(CTS600SettingEntity,WaterHeaterEntity):
     _attr_entity_category=None
-    _attr_temperature_unit=UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit=UnitOfTemperature.CELSIUS
     _attr_min_temp=5
     _attr_max_temp=60
     _attr_target_temperature_step=1
@@ -28,13 +28,19 @@ class CTS600WaterHeater(CTS600SettingEntity,WaterHeaterEntity):
         self._attr_name=f'{coordinator.name} TUV'
 
     @property
-    def target_temperature(self):
+    def native_target_temperature(self):
         value=self.controller_value
         return value if isinstance(value,int) else None
 
     @property
-    def current_temperature(self):
+    def native_current_temperature(self):
         return (self.coordinator.data or {}).get('T11')
+
+    # Keep the advertised HA 2026.10 support without deprecated overrides on 2026.11+.
+    if not hasattr(WaterHeaterEntity, "native_temperature_unit"):
+        _attr_temperature_unit = _attr_native_temperature_unit
+        current_temperature = native_current_temperature
+        target_temperature = native_target_temperature
 
     @property
     def current_operation(self):
@@ -56,7 +62,7 @@ class CTS600WaterHeater(CTS600SettingEntity,WaterHeaterEntity):
 class CTS600SeparateHeater(CTS600SettingEntity,WaterHeaterEntity):
     """Expose each existing target with its actual probe; no fabricated on/off setpoint."""
     _attr_entity_category=None
-    _attr_temperature_unit=UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit=UnitOfTemperature.CELSIUS
     _attr_min_temp=5
     _attr_target_temperature_step=1
     _attr_supported_features=WaterHeaterEntityFeature.TARGET_TEMPERATURE
@@ -73,10 +79,15 @@ class CTS600SeparateHeater(CTS600SettingEntity,WaterHeaterEntity):
         self._attr_icon='mdi:heat-pump' if kind=='compressor' else 'mdi:water-boiler'
 
     @property
-    def current_temperature(self):return (self.coordinator.data or {}).get(self.probe)
+    def native_current_temperature(self):return (self.coordinator.data or {}).get(self.probe)
 
     @property
-    def target_temperature(self):return self.controller_value if type(self.controller_value) is int else None
+    def native_target_temperature(self):return self.controller_value if type(self.controller_value) is int else None
+
+    if not hasattr(WaterHeaterEntity, "native_temperature_unit"):
+        _attr_temperature_unit = _attr_native_temperature_unit
+        current_temperature = native_current_temperature
+        target_temperature = native_target_temperature
 
     @property
     def current_operation(self):
