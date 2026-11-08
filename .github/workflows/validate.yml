@@ -51,3 +51,23 @@ jobs:
       - run: python -m pip install -r requirements-test.txt
       - run: python script/validate_repository.py
       - run: python -m pytest tests -q
+
+  temperature-api:
+    name: Temperature API (HA ${{ matrix.ha }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ha: "2026.10.2"
+            python: "3.14"
+          - ha: "2026.11.0"
+            python: "3.14"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install "homeassistant==${{ matrix.ha }}" pymodbus==3.13.1
+      - run: python script/validate_temperature_api.py
