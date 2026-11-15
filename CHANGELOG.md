@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026.11.15.0
+
+- Separate initialization from optional polling, and perform at most one due menu scan per cycle: SHOW DATA, one rotating settings group, or alarms. Retain basic state and T15 updates in every cycle.
+- Rotate due scans fairly without consuming deferred temperature deadlines during manual panel use. Only a completed SHOW DATA read advances measured-temperature freshness.
+- Preserve transport deadlines, connection recovery, command serialization and verified writes. No new entities, Recorder exclusions or dashboard changes.
+- Validate scheduling and recovery with synthetic slow I/O on Home Assistant Core 2026.11.1.
+
 ## 2026.11.8.0
 
 - Use the native temperature properties for climate, DHW, compressor and auxiliary heater entities on Home Assistant 2026.11 and newer, removing the startup deprecation warnings before the old API is removed in 2027.11.

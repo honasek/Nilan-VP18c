@@ -14,6 +14,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = CTS600Coordinator(hass, entry)
     try:
         await coordinator.async_config_entry_first_refresh()
+        # Initialization and SHOW DATA use separate, bounded polling cycles.
+        # Load learned stores/options only after the controller identity read.
+        await coordinator.async_config_entry_first_refresh()
         await coordinator.async_restore_options()
         coordinator._filter_runtime=FilterMaintenance(hass,coordinator)
         await coordinator._filter_runtime.async_start()
