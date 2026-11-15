@@ -60,7 +60,7 @@ jobs:
         include:
           - ha: "2026.10.2"
             python: "3.14"
-          - ha: "2026.11.0"
+          - ha: "2026.11.1"
             python: "3.14"
     steps:
       - uses: actions/checkout@v6
@@ -71,3 +71,4 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install "homeassistant==${{ matrix.ha }}" pymodbus==3.13.1
       - run: python script/validate_temperature_api.py
+      - run: python script/validate_poll_cycles.py

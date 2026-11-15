@@ -4,7 +4,7 @@
 
 A custom integration for the **Nilan CTS600** controller connected through a transparent TCP–RS485 gateway. This variant is based on [frodef/nilan-cts600-homeassistant](https://github.com/frodef/nilan-cts600-homeassistant) and includes extensions developed and used with a Nilan VP18 K.
 
-Current version: **2026.11.4.0**, targeting Home Assistant Core **2026.10.4** (current stable at implementation). Menu support depends on the controller and firmware.
+Current version: **2026.11.15.0**, validated with Home Assistant Core **2026.11.1** (current stable at implementation). Menu support depends on the controller and firmware.
 
 ## Features
 
@@ -145,6 +145,18 @@ The filter maintenance date, DHW model and learned data are saved in Home Assist
 All external sensors and helper inputs are selected explicitly in the configuration/options flow. No household sensor or helper name is required. This repository does not include personal `configuration.yaml` files, packages, measurement history or Lovelace dashboards. These require your own entity configuration and are not created by HACS installation.
 
 ## Development and validation
+
+Polling refreshes T15 and the basic controller state every cycle. Initialization
+runs without an additional menu scan. Later cycles perform at most one due scan:
+SHOW DATA temperatures, one rotating settings group, or alarms. Scans take turns
+when several are due; their existing 60/30/60-second intervals are minimum delays
+after each scan, not promises of exact wall-clock frequency. Manual panel use
+defers scans without marking them complete. The 3-second frame timeout,
+25-second operation deadline and serialized command/readback path are unchanged.
+
+Run `python script/validate_poll_cycles.py` in an isolated Home Assistant
+environment to exercise slow scans, fairness, manual deferral, freshness and
+connection recovery against the real coordinator with synthetic device I/O.
 
 The repository follows the HACS **Integration** directory layout:
 
